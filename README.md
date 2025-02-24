@@ -4,6 +4,7 @@
 This project provides a foundational ray tracing renderer for students studying Advanced Computer Graphics. The codebase is structured to facilitate learning by including sections where students need to complete missing implementations.
 
 ## Project Structure
+
 ```
 Renderer/
 ??? Core.h               # Core mathematical and utility functions
@@ -20,10 +21,11 @@ Renderer/
 ```
 
 ## Scenes
-Scenes can be found on the Moodle page. Please download them and place in the working directory.
+Scenes can be found on the Moodle page. Please download them and place them in the working directory.
 
 ## Tasks for Students
 Several functions and algorithms are left incomplete and require implementation. Look for comments such as:
+
 ```cpp
 // Add code here
 ```
