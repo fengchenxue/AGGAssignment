@@ -1,6 +1,7 @@
 # RTBase
 
 ## Overview
+
 This project provides a foundational ray tracing renderer for students studying Advanced Computer Graphics. The codebase is structured to facilitate learning by including sections where students need to complete missing implementations.
 
 ## Project Structure
@@ -21,9 +22,11 @@ Renderer/
 ```
 
 ## Scenes
+
 Scenes can be found on the Moodle page. Please download them and place them in the working directory.
 
 ## Tasks for Students
+
 Several functions and algorithms are left incomplete and require implementation. Look for comments such as:
 
 ```cpp
@@ -31,5 +34,6 @@ Several functions and algorithms are left incomplete and require implementation.
 ```
 
 ## Notes
+
 - Ensure your implementations are efficient and well-commented.
 - Test incremental changes using appropriate scenes.
