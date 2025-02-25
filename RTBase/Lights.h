@@ -107,8 +107,10 @@ public:
 	}
 	Colour evaluate(const ShadingData& shadingData, const Vec3& wi)
 	{
-		float u = SphericalCoordinates::sphericalPhi(wi) / (2.0f * M_PI);
-		float v = SphericalCoordinates::sphericalTheta(wi) / M_PI;
+		float u = atan2f(wi.z, wi.x);
+		u = (u < 0.0f) ? u + (2.0f * M_PI) : u;
+		u = u / (2.0f * M_PI);
+		float v = acosf(wi.y) / M_PI;
 		return env->sample(u, v);
 	}
 	float PDF(const ShadingData& shadingData, const Vec3& wi)
