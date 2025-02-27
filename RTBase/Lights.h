@@ -5,6 +5,8 @@
 #include "Materials.h"
 #include "Sampling.h"
 
+#pragma warning( disable : 4244)
+
 class Light
 {
 public:
@@ -19,7 +21,7 @@ public:
 class AreaLight : public Light
 {
 public:
-	Triangle* triangle;
+	Triangle* triangle = NULL;
 	Colour emission;
 	Vec3 sample(const ShadingData& shadingData, Sampler* sampler, Colour& emittedColour, float& pdf)
 	{

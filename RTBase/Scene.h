@@ -12,8 +12,8 @@ class Camera
 public:
 	Matrix inverseProjectionMatrix;
 	Matrix camera;
-	float width;
-	float height;
+	float width = 0;
+	float height = 0;
 	Vec3 origin;
 	void init(Matrix ProjectionMatrix, int screenwidth, int screenheight)
 	{
@@ -47,8 +47,8 @@ public:
 	std::vector<Triangle> triangles;
 	std::vector<BSDF*> materials;
 	std::vector<Light*> lights;
-	Light* background;
-	BVHNode* bvh;
+	Light* background = NULL;
+	BVHNode* bvh = NULL;
 	Camera camera;
 	AABB bounds;
 	void build()

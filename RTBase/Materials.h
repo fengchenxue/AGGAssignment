@@ -4,6 +4,8 @@
 #include "Imaging.h"
 #include "Sampling.h"
 
+#pragma warning( disable : 4244)
+
 class BSDF;
 
 class ShadingData
@@ -174,7 +176,7 @@ public:
 		albedo = _albedo;
 		eta = _eta;
 		k = _k;
-		alpha = 1.62142 * sqrtf(roughness);
+		alpha = 1.62142f * sqrtf(roughness);
 	}
 	Vec3 sample(const ShadingData& shadingData, Sampler* sampler, Colour& reflectedColour, float& pdf)
 	{
@@ -268,7 +270,7 @@ public:
 		albedo = _albedo;
 		intIOR = _intIOR;
 		extIOR = _extIOR;
-		alpha = 1.62142 * sqrtf(roughness);
+		alpha = 1.62142f * sqrtf(roughness);
 	}
 	Vec3 sample(const ShadingData& shadingData, Sampler* sampler, Colour& reflectedColour, float& pdf)
 	{
@@ -360,7 +362,7 @@ public:
 		albedo = _albedo;
 		intIOR = _intIOR;
 		extIOR = _extIOR;
-		alpha = 1.62142 * sqrtf(roughness);
+		alpha = 1.62142f * sqrtf(roughness);
 	}
 	float alphaToPhongExponent()
 	{

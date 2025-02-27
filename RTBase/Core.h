@@ -8,6 +8,9 @@
 #include <vector>
 #include <algorithm>
 
+// Stop warnings about M_PI being a double
+#pragma warning( disable : 4244)
+
 #define SQ(x) (x * x)
 
 class Colour
@@ -16,7 +19,7 @@ public:
 	float r;
 	float g;
 	float b;
-	Colour() {}
+	Colour() { r = 0; g = 0; b = 0; }
 	Colour(float _r, float _g, float _b)
 	{
 		r = _r;
@@ -31,9 +34,9 @@ public:
 	}
 	void ToRGB(unsigned char& cr, unsigned char& cg, unsigned char& cb)
 	{
-		cr = r * 255;
-		cg = g * 255;
-		cb = b * 255;
+		cr = (unsigned char)(r * 255);
+		cg = (unsigned char)(g * 255);
+		cb = (unsigned char)(b * 255);
 	}
 	Colour operator+(const Colour& colour) const
 	{
@@ -418,7 +421,7 @@ public:
 			identity();
 			det = 1.0f;
 		}
-		det = 1.0 / det;
+		det = 1.0f / det;
 		for (int i = 0; i < 16; i++)
 		{
 			inv[i] = inv[i] * det;

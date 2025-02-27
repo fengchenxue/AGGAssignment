@@ -7,6 +7,9 @@
 #define __STDC_LIB_EXT1__
 #include "stb_image_write.h"
 
+// Stop warnings about buffer overruns if size is zero. Size should never be zero and if it is the code handles it.
+#pragma warning( disable : 6386)
+
 constexpr float texelScale = 1.0f / 255.0f;
 
 class Texture
@@ -17,12 +20,25 @@ public:
 	int width;
 	int height;
 	int channels;
+	void loadDefault()
+	{
+		width = 1;
+		height = 1;
+		channels = 3;
+		texels = new Colour[1];
+		texels[0] = Colour(1.0f, 1.0f, 1.0f);
+	}
 	void load(std::string filename)
 	{
 		alpha = NULL;
 		if (filename.find(".hdr") != std::string::npos)
 		{
 			float* textureData = stbi_loadf(filename.c_str(), &width, &height, &channels, 0);
+			if (width == 0 || height == 0)
+			{
+				loadDefault();
+				return;
+			}
 			texels = new Colour[width * height];
 			for (int i = 0; i < (width * height); i++)
 			{
@@ -32,6 +48,11 @@ public:
 			return;
 		}
 		unsigned char* textureData = stbi_load(filename.c_str(), &width, &height, &channels, 0);
+		if (width == 0 || height == 0)
+		{
+			loadDefault();
+			return;
+		}
 		texels = new Colour[width * height];
 		for (int i = 0; i < (width * height); i++)
 		{
@@ -135,8 +156,8 @@ class Film
 {
 public:
 	Colour* film;
-	int width;
-	int height;
+	unsigned int width;
+	unsigned int height;
 	int SPP;
 	ImageFilter* filter;
 	void splat(const float x, const float y, const Colour& L)
@@ -168,7 +189,7 @@ public:
 	void save(std::string filename)
 	{
 		Colour* hdrpixels = new Colour[width * height];
-		for (int i = 0; i < (width * height); i++)
+		for (unsigned int i = 0; i < (width * height); i++)
 		{
 			hdrpixels[i] = film[i] / (float)SPP;
 		}

@@ -31,6 +31,9 @@ SOFTWARE.
 #include <sstream>
 #include <map>
 
+// Stop warnings about members not being initialized
+#pragma warning( disable : 26495)
+
 namespace GEMLoader
 {
 

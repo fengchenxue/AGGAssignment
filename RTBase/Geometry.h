@@ -20,7 +20,7 @@ public:
 	{
 		o = _o;
 		dir = _d;
-		invDir = Vec3(1.0 / dir.x, 1.0f / dir.y, 1.0f / dir.z);
+		invDir = Vec3(1.0f / dir.x, 1.0f / dir.y, 1.0f / dir.z);
 	}
 	Vec3 at(const float t) const
 	{

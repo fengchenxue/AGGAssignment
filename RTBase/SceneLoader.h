@@ -11,9 +11,9 @@ public:
 	Vec3 from;
 	Vec3 to;
 	Vec3 up;
-	Camera* camera;
-	float movespeed;
-	float rotspeed;
+	Camera* camera = NULL;
+	float movespeed = 1.0f;
+	float rotspeed = 5.0f;
 	RTCamera()
 	{
 		rotspeed = 5.0f;
@@ -185,14 +185,16 @@ void loadInstance(std::string sceneName, std::vector<Triangle>& meshTriangles, s
 		instance.material.find("coatingSigmaA").getValuesAsVector3(sigmaa.r, sigmaa.g, sigmaa.b);
 		float intIOR = instance.material.find("coatingIntIOR").getValue(1.33f);
 		float extIOR = instance.material.find("coatingExtIOR").getValue(1.0f);
-		float thickness = instance.material.find("coatingThickness").getValue(0);
+		float thickness = instance.material.find("coatingThickness").getValue(0.0f);
 		material = new LayeredBSDF(base, sigmaa, thickness, intIOR, extIOR);
 	}
 	if (material == NULL)
 	{
-		printf("%s\n", instance.material.find("bsdf").getValue(""));
+		// Flag there is an issue but keep loading as the rest of the scene might be fine
+		std::cout << "Error in loading" << std::endl;
+		return;
 	}
-	int materialIndex = meshMaterials.size() - 1;
+	int materialIndex = (int)meshMaterials.size() - 1;
 	std::vector<Vertex> vertices;
 	std::vector<unsigned int> indices;
 	Matrix transform;
@@ -218,7 +220,7 @@ void loadInstance(std::string sceneName, std::vector<Triangle>& meshTriangles, s
 			v.v = meshes[i].verticesStatic[n].v;
 			vertices.push_back(v);
 		}
-		int offset = indices.size();
+		int offset = (int)indices.size();
 		for (int n = 0; n < meshes[i].indices.size(); n++)
 		{
 			indices.push_back(offset + meshes[i].indices[n]);
@@ -241,7 +243,7 @@ Scene* loadScene(std::string sceneName)
 	gemscene.load(sceneName + "/scene.json");
 	int width = gemscene.findProperty("width").getValue(1920);
 	int height = gemscene.findProperty("height").getValue(1080);
-	float fov = gemscene.findProperty("fov").getValue(45);
+	float fov = gemscene.findProperty("fov").getValue(45.0f);
 	Matrix P = Matrix::perspective(0.001f, 10000.0f, (float)width / (float)height, fov);
 	Vec3 from;
 	Vec3 to;

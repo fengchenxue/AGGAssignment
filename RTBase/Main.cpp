@@ -62,10 +62,11 @@ int main(int argc, char *argv[])
 	}
 	Scene* scene = loadScene(sceneName);
 	GamesEngineeringBase::Window canvas;
-	canvas.create(scene->camera.width, scene->camera.height, "Tracer", 1.0f);
+	canvas.create((unsigned int)scene->camera.width, (unsigned int)scene->camera.height, "Tracer", 1.0f);
 	RayTracer rt;
 	rt.init(scene, &canvas);
 	bool running = true;
+	GamesEngineeringBase::Timer timer;
 	while (running)
 	{
 		canvas.checkInput();
@@ -104,7 +105,12 @@ int main(int argc, char *argv[])
 			viewcamera.flyDown();
 			rt.clear();
 		}
+		// Time how long a render call takes
+		timer.reset();
 		rt.render();
+		float t = timer.dt();
+		// Write
+		std::cout << t << std::endl;
 		if (canvas.keyPressed('P'))
 		{
 			rt.saveHDR(filename);

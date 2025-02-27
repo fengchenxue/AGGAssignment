@@ -25,7 +25,7 @@ public:
 		scene = _scene;
 		canvas = _canvas;
 		film = new Film();
-		film->init(scene->camera.width, scene->camera.height, new BoxFilter());
+		film->init((unsigned int)scene->camera.width, (unsigned int)scene->camera.height, new BoxFilter());
 		SYSTEM_INFO sysInfo;
 		GetSystemInfo(&sysInfo);
 		numProcs = sysInfo.dwNumberOfProcessors;
@@ -84,9 +84,9 @@ public:
 	void render()
 	{
 		film->incrementSPP();
-		for (int y = 0; y < film->height; y++)
+		for (unsigned int y = 0; y < film->height; y++)
 		{
-			for (int x = 0; x < film->width; x++)
+			for (unsigned int x = 0; x < film->width; x++)
 			{
 				float px = x + 0.5f;
 				float py = y + 0.5f;
@@ -94,9 +94,9 @@ public:
 				Colour col = viewNormals(ray);
 				//Colour col = albedo(ray);
 				film->splat(px, py, col);
-				unsigned char r = col.r * 255;
-				unsigned char g = col.g * 255;
-				unsigned char b = col.b * 255;
+				unsigned char r = (unsigned char)(col.r * 255);
+				unsigned char g = (unsigned char)(col.g * 255);
+				unsigned char b = (unsigned char)(col.b * 255);
 				canvas->draw(x, y, r, g, b);
 			}
 		}
