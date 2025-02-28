@@ -29,14 +29,7 @@ public:
 	// Add code here
 	Ray generateRay(float x, float y)
 	{
-		float xprime = x / width;
-		float yprime = 1.0f - (y / height);
-		xprime = (xprime * 2.0f) - 1.0f;
-		yprime = (yprime * 2.0f) - 1.0f;
-		Vec3 dir(xprime, yprime, 1.0f);
-		dir = inverseProjectionMatrix.mulPoint(dir);
-		dir = camera.mulVec(dir);
-		dir = dir.normalize();
+		Vec3 dir(0, 0, 1);
 		return Ray(origin, dir);
 	}
 };

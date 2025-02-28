@@ -305,6 +305,14 @@ public:
 			(v.x * m[0] + v.y * m[1] + v.z * m[2]) + m[3],
 			(v.x * m[4] + v.y * m[5] + v.z * m[6]) + m[7],
 			(v.x * m[8] + v.y * m[9] + v.z * m[10]) + m[11]);
+		return v1;
+	}
+	Vec3 mulPointAndPerspectiveDivide(const Vec3& v)
+	{
+		Vec3 v1 = Vec3(
+			(v.x * m[0] + v.y * m[1] + v.z * m[2]) + m[3],
+			(v.x * m[4] + v.y * m[5] + v.z * m[6]) + m[7],
+			(v.x * m[8] + v.y * m[9] + v.z * m[10]) + m[11]);
 		float w;
 		w = (m[12] * v.x) + (m[13] * v.y) + (m[14] * v.z) + m[15];
 		w = 1.0f / w;
