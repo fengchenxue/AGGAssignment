@@ -37,7 +37,8 @@ public:
 	}
 	static float Gggx(Vec3 wi, Vec3 wo, float alpha)
 	{
-		return 1.0f / (1.0f + lambdaGGX(wi, alpha) + lambdaGGX(wo, alpha));
+		// Add code here
+		return 1.0f;
 	}
 	static float fresnelDielectric(float cosTheta, float iorInt, float iorExt)
 	{

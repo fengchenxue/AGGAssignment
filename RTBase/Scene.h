@@ -48,7 +48,7 @@ public:
 	{
 		// Add BVH building code here
 		
-		// Do not touch this code!
+		// Do not touch the code below this line!
 		// Build light list
 		for (int i = 0; i < triangles.size(); i++)
 		{
@@ -84,6 +84,10 @@ public:
 		}
 		return intersection;
 	}
+	Light* sampleLight(Sampler* sampler, float& pmf)
+	{
+		return NULL;
+	}
 	// Do not modify any code below this line
 	void init(std::vector<Triangle> meshTriangles, std::vector<BSDF*> meshMaterials, Light* _background)
 	{
@@ -112,12 +116,6 @@ public:
 		dir = dir.normalize();
 		ray.init(p1 + (dir * EPSILON), dir);
 		return bvh->traverseVisible(ray, triangles, maxT);
-	}
-	Light* sampleLight(Sampler* sampler, float& pmf)
-	{
-		float r1 = sampler->next();
-		pmf = 1.0f / (float)lights.size();
-		return lights[std::min((int)(r1 * lights.size()), (int)(lights.size() - 1))];
 	}
 	Colour emit(Triangle* light, ShadingData shadingData, Vec3 wi)
 	{
