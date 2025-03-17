@@ -192,6 +192,25 @@ public:
 	// Add code here
 	bool rayIntersect(Ray& r, float& t)
 	{
+		Vec3 l = r.o - centre;
+		float b = 2*Dot(l, r.dir);
+		float c = Dot(l, l) - radius * radius;
+
+		float delta = b * b - 4 * c;
+		if (delta < 0) return false;
+		
+		float sqrtDelta = sqrt(delta);
+		float t0 = (-b - sqrtDelta) / 2;
+		float t1 = (-b + sqrtDelta) / 2;
+
+		if (t0 >= 0.0f) {
+			t = t0;
+			return true;
+		}else if (t1>=0.0f) {
+			t = t1;
+			return true;
+		}
+
 		return false;
 	}
 };

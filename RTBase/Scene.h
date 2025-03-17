@@ -11,7 +11,7 @@ class Camera
 {
 public:
 	Matrix inverseProjectionMatrix;
-	Matrix camera;
+	Matrix inv_camera;
 	float width = 0;
 	float height = 0;
 	Vec3 origin;
@@ -23,13 +23,20 @@ public:
 	}
 	void updateView(Matrix V)
 	{
-		camera = V;
-		origin = camera.mulPoint(Vec3(0, 0, 0));
+		inv_camera = V;
+		origin = inv_camera.mulPoint(Vec3(0, 0, 0));
 	}
 	// Add code here
 	Ray generateRay(float x, float y)
 	{
-		Vec3 dir(0, 0, 1);
+		float xprime = x / width;
+		float yprime = 1.0f - (y / height);
+		xprime = (xprime * 2.0f) - 1.0f;
+		yprime = (yprime * 2.0f) - 1.0f;
+		Vec3 dir(xprime, yprime, 1.0f);
+		dir = inverseProjectionMatrix.mulPointAndPerspectiveDivide(dir);
+		dir = inv_camera.mulVec(dir);
+		dir = dir.normalize();
 		return Ray(origin, dir);
 	}
 };
