@@ -142,12 +142,34 @@ public:
 	// Add code here
 	bool rayAABB(const Ray& r, float& t)
 	{
+		Vec3 t_min(-FLT_MAX, -FLT_MAX, -FLT_MAX);
+		Vec3 t_max(FLT_MAX, FLT_MAX, FLT_MAX);
+
+		for (int i = 0; i <= 2; i++) {
+			if (std::abs(r.dir.coords[i]) < EPSILON) {
+				if (r.o.coords[i] < min.coords[i] || r.o.coords[i] > max.coords[i]) return false;
+			}
+			else {
+				float invD = 1.0f / r.dir.coords[i];
+				t_min.coords[i] = (min.coords[i] - r.o.coords[i]) * invD;
+				t_max.coords[i] = (max.coords[i] - r.o.coords[i]) * invD;
+				if (r.dir.coords[i] < 0.0f) std::swap(t_min.coords[i], t_max.coords[i]);
+			}
+		}
+		float t_enter = std::max(t_min.x, std::max(t_min.y, t_min.z));
+		float t_exit = std::min(t_max.x, std::min(t_max.y, t_max.z));
+
+		if (t_enter > t_exit || t_exit < 0.0f) return false;
+
+		t = (t_enter < 0.0f) ? 0.0f : t_enter;
+
 		return true;
 	}
 	// Add code here
 	bool rayAABB(const Ray& r)
 	{
-		return true;
+		float t;
+		return rayAABB(r, t);
 	}
 	// Add code here
 	float area()
