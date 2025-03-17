@@ -2,6 +2,7 @@
 
 #include "Core.h"
 #include "Sampling.h"
+#define EPSILON 0.0001f
 
 class Ray
 {
@@ -33,6 +34,9 @@ class Plane
 public:
 	Vec3 n;
 	float d;
+	//important comment: 
+	//d= -n*p0, where p0 is a point on the plane
+	//t= -(n*o+d) / (dir*n) or t= (p0-o)*n / (dir*n)
 	void init(Vec3& _n, float _d)
 	{
 		n = _n;
@@ -41,11 +45,13 @@ public:
 	// Add code here
 	bool rayIntersect(Ray& r, float& t)
 	{
-		return false;
+		float nd = Dot(n, r.dir);
+		if (std::abs(nd) < EPSILON) return false;
+		
+		t = -(Dot(n, r.o) + d) / nd;
+		return t >= 0;
 	}
 };
-
-#define EPSILON 0.001f
 
 class Triangle
 {
@@ -55,6 +61,7 @@ public:
 	Vec3 e2; // Edge 2
 	Vec3 n; // Geometric Normal
 	float area; // Triangle area
+	float invarea; // Inverse area
 	float d; // For ray triangle if needed
 	unsigned int materialIndex;
 	void init(Vertex v0, Vertex v1, Vertex v2, unsigned int _materialIndex)
@@ -63,20 +70,37 @@ public:
 		vertices[0] = v0;
 		vertices[1] = v1;
 		vertices[2] = v2;
-		e1 = vertices[2].p - vertices[1].p;
-		e2 = vertices[0].p - vertices[2].p;
+		//The original code seemed wrong, so I rewrote e1 and e2
+		e1 = vertices[1].p - vertices[0].p;
+		e2 = vertices[2].p - vertices[0].p;
 		n = e1.cross(e2).normalize();
 		area = e1.cross(e2).length() * 0.5f;
-		d = Dot(n, vertices[0].p);
+		invarea = 1.0f / area;
+		//The orignal code was d = Dot(n, vertices[0].p), the standard formula is d = -n*p0
+		d = -Dot(n, vertices[0].p);
 	}
 	Vec3 centre() const
 	{
 		return (vertices[0].p + vertices[1].p + vertices[2].p) / 3.0f;
 	}
 	// Add code here
+	// Möller-Trumbore
 	bool rayIntersect(const Ray& r, float& t, float& u, float& v) const
 	{
+		Vec3 s = r.o - vertices[0].p;
+		Vec3 s1 = r.dir.cross(e2);
+		Vec3 s2 = s.cross(e1);
+		float invDet = s1.dot(e1);
+		if (std::abs(invDet) < EPSILON) return false;
+		invDet = 1.0f / invDet;
+		
+		t = s2.dot(e2) * invDet;
+		u = s1.dot(s) * invDet;
+		v = s2.dot(r.dir) * invDet;
+		if (t < 0.0f|| u < 0.0f || v < 0.0f || u + v > 1.0f) return false;
+
 		return true;
+
 	}
 	void interpolateAttributes(const float alpha, const float beta, const float gamma, Vec3& interpolatedNormal, float& interpolatedU, float& interpolatedV) const
 	{
