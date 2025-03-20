@@ -1,5 +1,6 @@
 #pragma once
 
+#include<algorithm>
 #include "Core.h"
 #include "Sampling.h"
 #define EPSILON 0.0001f
@@ -237,21 +238,125 @@ public:
 	BVHNode* l;
 	// This can store an offset and number of triangles in a global triangle list for example
 	// But you can store this however you want!
-	// unsigned int offset;
-	// unsigned char num;
+	unsigned int offset=0;
+	unsigned int num=0;
+	
+	bool isLeaf()
+	{
+		return (r == NULL && l == NULL);
+	}
+
 	BVHNode()
 	{
 		r = NULL;
 		l = NULL;
 	}
 	// Note there are several options for how to implement the build method. Update this as required
-	void build(std::vector<Triangle>& inputTriangles)
+	void build(std::vector<Triangle>& inputTriangles,int start, int end)
 	{
+
 		// Add BVH building code here
+		// Calculate bounds
+		for (auto& triangle : inputTriangles) {
+			bounds.extend(triangle.vertices[0].p);
+			bounds.extend(triangle.vertices[1].p);
+			bounds.extend(triangle.vertices[2].p);
+		}
+
+		// If it has less than 8 triangles, it is a leaf node
+		int numTriangles = end - start;
+		if (numTriangles <= MAXNODE_TRIANGLES) {
+			offset = start;
+			num = numTriangles;
+			return;
+		}
+
+		//-----SAH calculation------
+		float bestCost = FLT_MAX;
+		int bestAxis = -1;
+		int bestSplit = -1;
+		for (int i = 0; i < 3; i++) {
+			std::sort(inputTriangles.begin() + start, inputTriangles.begin() + end,
+				[i](Triangle& a, Triangle& b) {
+					float aCenter = a.vertices[0].p.coords[i] + a.vertices[1].p.coords[i] + a.vertices[2].p.coords[i];
+					float bCenter = b.vertices[0].p.coords[i] + b.vertices[1].p.coords[i] + b.vertices[2].p.coords[i];
+					return aCenter < bCenter;
+				});
+
+			std::vector<AABB> leftBounds(numTriangles), rightBounds(numTriangles);
+			AABB box1, box2;
+			for (int i = 0; i < numTriangles; i++) {
+				box1.extend(inputTriangles[i + start].vertices[0].p);
+				box1.extend(inputTriangles[i + start].vertices[1].p);
+				box1.extend(inputTriangles[i + start].vertices[2].p);
+				leftBounds[i] = box1;
+			}
+			for (int i = numTriangles - 1; i >= 0; i--) {
+				box2.extend(inputTriangles[i + start].vertices[0].p);
+				box2.extend(inputTriangles[i + start].vertices[1].p);
+				box2.extend(inputTriangles[i + start].vertices[2].p);
+				rightBounds[i] = box2;
+			}
+
+			// Calculate the best split
+			for (int i = 1; i < numTriangles; i++) {
+
+				float cost = TRAVERSE_COST + 
+					leftBounds[i - 1].area() / bounds.area() * i * TRIANGLE_COST +
+					rightBounds[i].area() / bounds.area() * (numTriangles - i) * TRIANGLE_COST;
+
+				if (cost < bestCost) {
+					bestCost = cost;
+					bestAxis = i;
+					bestSplit = start+i;
+				}
+			}
+		}
+		// can not find best spilt
+		if (bestAxis==-1)
+		{
+			offset = start;
+			num = numTriangles;
+			return;
+		}
+
+		//sort triangle vector according to best axis
+		std::sort(inputTriangles.begin() + start, inputTriangles.begin() + end,
+			[bestAxis](Triangle& a, Triangle& b) {
+				float aCenter = a.vertices[0].p.coords[bestAxis] + a.vertices[1].p.coords[bestAxis] + a.vertices[2].p.coords[bestAxis];
+				float bCenter = b.vertices[0].p.coords[bestAxis] + b.vertices[1].p.coords[bestAxis] + b.vertices[2].p.coords[bestAxis];
+				return aCenter < bCenter;
+			});
+
+		l = new BVHNode();
+		r = new BVHNode();
+		l->build(inputTriangles, start, bestSplit);
+		r->build(inputTriangles, bestSplit, end);
 	}
+
 	void traverse(const Ray& ray, const std::vector<Triangle>& triangles, IntersectionData& intersection)
 	{
 		// Add BVH Traversal code here
+		if (!bounds.rayAABB(ray)) return;
+
+		if (isLeaf()) {
+			for (int i = offset; i < offset + num; i++) {
+				float t, u, v;
+				if (triangles[i].rayIntersect(ray, t, u, v)) {
+					if (t < intersection.t) {
+						intersection.t = t;
+						intersection.ID = i;
+						intersection.alpha = u;
+						intersection.beta = v;
+						intersection.gamma = 1.0f - (u + v);
+					}
+				}
+			}
+		}
+		else {
+			if (l) traverse(ray, triangles, intersection);
+			if (r) traverse(ray, triangles, intersection);
+		}
 	}
 	IntersectionData traverse(const Ray& ray, const std::vector<Triangle>& triangles)
 	{
@@ -263,6 +368,22 @@ public:
 	bool traverseVisible(const Ray& ray, const std::vector<Triangle>& triangles, const float maxT)
 	{
 		// Add visibility code here
-		return true;
+		if (!bounds.rayAABB(ray)) return true;
+
+		if (isLeaf()) {
+			for (int i = offset; i < offset + num; i++) {
+				float t, u, v;
+				if (triangles[i].rayIntersect(ray, t, u, v)) {
+					if (t < maxT) return false;
+				}
+			}
+			return true;
+		}
+		else {
+			bool vis = l ? l->traverseVisible(ray, triangles, maxT) : true;
+			if (!vis) return false;
+			vis = r ? r->traverseVisible(ray, triangles, maxT) : true;
+			return vis;
+		}
 	}
 };

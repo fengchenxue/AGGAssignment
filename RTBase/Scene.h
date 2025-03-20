@@ -48,13 +48,14 @@ public:
 	std::vector<BSDF*> materials;
 	std::vector<Light*> lights;
 	Light* background = NULL;
-	BVHNode* bvh = NULL;
+	std::unique_ptr<BVHNode> bvh = std::make_unique<BVHNode>();
 	Camera camera;
 	AABB bounds;
 	void build()
 	{
 		// Add BVH building code here
-		
+		bvh->build(triangles, 0, triangles.size() - 1);
+
 		// Do not touch the code below this line!
 		// Build light list
 		for (int i = 0; i < triangles.size(); i++)
