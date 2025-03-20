@@ -167,6 +167,36 @@ public:
 	void tonemap(int x, int y, unsigned char& r, unsigned char& g, unsigned char& b, float exposure = 1.0f)
 	{
 		// Return a tonemapped pixel at coordinates x, y
+		
+		Colour color = film[y * width + x] / (float)SPP;
+		color = color * exposure;
+		
+		// ACES Filmic Approximation (Narkowicz 2015)
+		const float A = 2.51f;
+		const float B = 0.03f;
+		const float C = 2.43f;
+		const float D = 0.59f;
+		const float E = 0.14f;
+
+		color.r = (color.r * (A * color.r + B)) / (color.r * (C * color.r + D) + E);
+		color.g = (color.g * (A * color.g + B)) / (color.g * (C * color.g + D) + E);
+		color.b = (color.b * (A * color.b + B)) / (color.b * (C * color.b + D) + E);
+
+		//Gamma correction
+		float invGamma = 1.0f / 2.2f;
+		color.r = powf(color.r, invGamma);
+		color.g = powf(color.g, invGamma);
+		color.b = powf(color.b, invGamma);
+
+		// Clamp to 0-1
+		color.r = std::min(1.0f, std::max(0.0f, color.r));
+		color.g = std::min(1.0f, std::max(0.0f, color.g));
+		color.b = std::min(1.0f, std::max(0.0f, color.b));
+
+		// Convert to 0-255
+		r = (unsigned char)(color.r * 255);
+		g = (unsigned char)(color.g * 255);
+		b = (unsigned char)(color.b * 255);
 	}
 	// Do not change any code below this line
 	void init(int _width, int _height, ImageFilter* _filter)
