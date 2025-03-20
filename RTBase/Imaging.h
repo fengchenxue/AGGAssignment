@@ -140,7 +140,7 @@ class BoxFilter : public ImageFilter
 public:
 	float filter(float x, float y) const
 	{
-		if (fabsf(x) < 0.5f && fabs(y) < 0.5f)
+		if (fabsf(x) < 0.5f && fabsf(y) < 0.5f)
 		{
 			return 1.0f;
 		}
@@ -163,6 +163,23 @@ public:
 	void splat(const float x, const float y, const Colour& L)
 	{
 		// Code to splat a smaple with colour L into the image plane using an ImageFilter
+
+		int r = filter->size();
+		int x_start = std::max(0,static_cast<int>(floorf(x - r)));
+		int x_end = std::min(static_cast<int>(width),static_cast<int>(floorf(x + r)));
+		int y_start = std::max(0, static_cast<int>(floorf(y - r)));
+		int y_end = std::min(static_cast<int>(height), static_cast<int>(floorf(y + r)));
+
+		for (int i = x_start; i <= x_end; i++)
+		{
+			for (int j = y_start; j <= y_end; j++)
+			{
+				float dx = i + 0.5f - x;
+				float dy = j + 0.5f - y;
+				float weight = filter->filter(dx,dy);
+				film[j * width + i] = film[j * width + i] + (L * weight);
+			}
+		}
 	}
 	void tonemap(int x, int y, unsigned char& r, unsigned char& g, unsigned char& b, float exposure = 1.0f)
 	{
