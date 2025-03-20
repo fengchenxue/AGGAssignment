@@ -113,11 +113,9 @@ public:
 	}
 	Light* sampleLight(Sampler* sampler, float& pmf)
 	{
-		//float r1 = sampler->next();
-		//pmf = 1.0f / (float)lights.size();
-		//return lights[std::min((int)(r1 * (float)lights.size()),(int)(lights.size()-1))];
-
-		return NULL;
+		float r1 = sampler->next();
+		pmf = 1.0f / (float)lights.size();
+		return lights[std::min((int)(r1 * (float)lights.size()),(int)(lights.size()-1))];
 	}
 	// Do not modify any code below this line
 	void init(std::vector<Triangle> meshTriangles, std::vector<BSDF*> meshMaterials, Light* _background)

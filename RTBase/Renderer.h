@@ -11,6 +11,8 @@
 #include <thread>
 #include <functional>
 
+#define MAX_DEPTH 5
+
 class RayTracer
 {
 public:
@@ -44,17 +46,104 @@ public:
 		{
 			return Colour(0.0f, 0.0f, 0.0f);
 		}
-		// Compute direct lighting here
+		// Sample a light
+		float pmf;
+		Light* light = scene->sampleLight(sampler, pmf);
+		// Sample a point on the light
+		float pdf;
+		Colour emitted;
+		Vec3 p = light->sample(shadingData, sampler, emitted, pdf);
+		if (light->isArea())
+		{
+			// Calculate GTerm
+			Vec3 wi = p - shadingData.x;
+			float l = wi.lengthSq();
+			wi = wi.normalize();
+			float GTerm = (max(Dot(wi, shadingData.sNormal), 0.0f) * max(-Dot(wi, light->normal(shadingData, wi)), 0.0f)) / l;
+			if (GTerm > 0)
+			{
+				// Trace
+				if (scene->visible(shadingData.x, p))
+				{
+					// Shade
+					return shadingData.bsdf->evaluate(shadingData, wi) * emitted * GTerm / (pmf * pdf);
+				}
+			}
+		}
+		else
+		{
+			// Calculate GTerm
+			Vec3 wi = p;
+			float GTerm = max(Dot(wi, shadingData.sNormal), 0.0f);
+			if (GTerm > 0)
+			{
+				// Trace
+				if (scene->visible(shadingData.x, shadingData.x + (p * 10000.0f)))
+				{
+					// Shade
+					return shadingData.bsdf->evaluate(shadingData, wi) * emitted * GTerm / (pmf * pdf);
+				}
+			}
+		}
 		return Colour(0.0f, 0.0f, 0.0f);
 	}
-	Colour pathTrace(Ray& r, Colour& pathThroughput, int depth, Sampler* sampler)
+	Colour pathTrace(Ray& r, Colour& pathThroughput, int depth, Sampler* sampler, bool canHitLight = true)
 	{
 		// Add pathtracer code here
-		return Colour(0.0f, 0.0f, 0.0f);
+		IntersectionData intersection = scene->traverse(r);
+		ShadingData shadingData = scene->calculateShadingData(intersection, r);
+		if (shadingData.t < FLT_MAX)
+		{
+			if (shadingData.bsdf->isLight())
+			{
+				if (canHitLight == true)
+				{
+					return pathThroughput * shadingData.bsdf->emit(shadingData, shadingData.wo);
+				}
+				else
+				{
+					return Colour(0.0f, 0.0f, 0.0f);
+				}
+			}
+			Colour direct = pathThroughput * computeDirect(shadingData, sampler);
+			if (depth > MAX_DEPTH)
+			{
+				return direct;
+			}
+			float russianRouletteProbability = min(pathThroughput.Lum(), 0.9f);
+			if (sampler->next() < russianRouletteProbability)
+			{
+				pathThroughput = pathThroughput / russianRouletteProbability;
+			}
+			else
+			{
+				return direct;
+			}
+			Colour bsdf;
+			float pdf;
+			Vec3 wi = SamplingDistributions::cosineSampleHemisphere(sampler->next(), sampler->next());
+			pdf = SamplingDistributions::cosineHemispherePDF(wi);
+			wi = shadingData.frame.toWorld(wi);
+			bsdf = shadingData.bsdf->evaluate(shadingData, wi);
+			pathThroughput = pathThroughput * bsdf * fabsf(Dot(wi, shadingData.sNormal)) / pdf;
+			r.init(shadingData.x + (wi * EPSILON), wi);
+			return (direct + pathTrace(r, pathThroughput, depth + 1, sampler, shadingData.bsdf->isPureSpecular()));
+		}
+		return scene->background->evaluate(shadingData, r.dir);
 	}
 	Colour direct(Ray& r, Sampler* sampler)
 	{
 		// Compute direct lighting for an image sampler here
+		IntersectionData intersection = scene->traverse(r);
+		ShadingData shadingData = scene->calculateShadingData(intersection, r);
+		if (shadingData.t < FLT_MAX)
+		{
+			if (shadingData.bsdf->isLight())
+			{
+				return shadingData.bsdf->emit(shadingData, shadingData.wo);
+			}
+			return computeDirect(shadingData, sampler);
+		}
 		return Colour(0.0f, 0.0f, 0.0f);
 	}
 	Colour albedo(Ray& r)
@@ -91,8 +180,8 @@ public:
 				float px = x + 0.5f;
 				float py = y + 0.5f;
 				Ray ray = scene->camera.generateRay(px, py);
-				Colour col = viewNormals(ray);
-				//Colour col = albedo(ray);
+				//Colour col = viewNormals(ray);
+				Colour col = albedo(ray);
 				film->splat(px, py, col);
 				unsigned char r = (unsigned char)(col.r * 255);
 				unsigned char g = (unsigned char)(col.g * 255);
