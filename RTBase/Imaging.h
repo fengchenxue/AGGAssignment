@@ -152,6 +152,63 @@ public:
 	}
 };
 
+class GaussianFilter : public ImageFilter
+{
+public:
+	GaussianFilter(float _alpha, float _radius)
+		: alpha(_alpha), radius(_radius){}
+
+	float filter(const float x, const float y) const override
+	{
+		return gaussian1D(x) * gaussian1D(y);
+	}
+	int size() const override
+	{
+		return static_cast<int>(std::ceil(radius));
+	}
+private:
+	float alpha;
+	float radius;
+	float gaussian1D(float d) const
+	{
+		d = std::fabs(d);
+		if (d >= radius)
+			return 0.0f;
+
+		return std::exp(-alpha * d * d) - std::exp(-alpha * radius * radius);
+	}
+};
+
+class MitchellFilter : public ImageFilter
+{
+public:
+	MitchellFilter(float _B=1.0f/3.0f, float _C=1.0f/3.0f)
+		: B(_B), C(_C){}
+
+	float filter(const float x, const float y) const override
+	{
+		return mitchell1D(x) * mitchell1D(y);
+	}
+	int size() const override
+	{
+		return 2;
+	}
+private:
+	float B;
+	float C;
+	float mitchell1D(float x) const
+	{
+		x = std::fabs(x);
+		if (x > 2.0f)
+			return 0.0f;
+
+		float x2 = x * x;
+		float x3 = x2 * x;
+
+		if (x < 1.0f) return ((12.0f - 9.0f * B - 6.0f * C) * x3 + (-18.0f + 12.0f * B + 6.0f * C) * x2 + (6.0f - 2.0f * B)) / 6.0f;
+		else return ((-B - 6.0f * C) * x3 + (6.0f * B + 30.0f * C) * x2 + (-12.0f * B - 48.0f * C) * x + (8.0f * B + 24.0f * C)) / 6.0f;
+	}
+};
 class Film
 {
 public:
