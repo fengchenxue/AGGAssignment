@@ -10,21 +10,25 @@
 class Camera
 {
 public:
+	Matrix projectionMatrix;
 	Matrix inverseProjectionMatrix;
-	Matrix inv_camera;
+	Matrix camera;
+	Matrix cameraToView;
 	float width = 0;
 	float height = 0;
 	Vec3 origin;
 	void init(Matrix ProjectionMatrix, int screenwidth, int screenheight)
 	{
+		projectionMatrix = ProjectionMatrix;
 		inverseProjectionMatrix = ProjectionMatrix.invert();
 		width = (float)screenwidth;
 		height = (float)screenheight;
 	}
 	void updateView(Matrix V)
 	{
-		inv_camera = V;
-		origin = inv_camera.mulPoint(Vec3(0, 0, 0));
+		camera = V;
+		cameraToView = V.invert();
+		origin = camera.mulPoint(Vec3(0, 0, 0));
 	}
 	// Add code here
 	Ray generateRay(float x, float y)
@@ -35,9 +39,24 @@ public:
 		yprime = (yprime * 2.0f) - 1.0f;
 		Vec3 dir(xprime, yprime, 1.0f);
 		dir = inverseProjectionMatrix.mulPointAndPerspectiveDivide(dir);
-		dir = inv_camera.mulVec(dir);
+		dir = camera.mulVec(dir);
 		dir = dir.normalize();
 		return Ray(origin, dir);
+	}
+	bool projectOntoCamera(const Vec3& p, float& x, float& y)
+	{
+		Vec3 pview = cameraToView.mulPoint(p);
+		Vec3 pproj = projectionMatrix.mulPointAndPerspectiveDivide(pview);
+		x = (pproj.x + 1.0f) * 0.5f;
+		y = (pproj.y + 1.0f) * 0.5f;
+		if (x < 0 || x > 1.0f || y < 0 || y > 1.0f)
+		{
+			return false;
+		}
+		x = x * width;
+		y = 1.0f - y;
+		y = y * height;
+		return true;
 	}
 };
 
