@@ -3,7 +3,7 @@
 #include<algorithm>
 #include "Core.h"
 #include "Sampling.h"
-#define EPSILON 0.0001f
+#define EPSILON 0.001f
 
 class Ray
 {
@@ -22,7 +22,11 @@ public:
 	{
 		o = _o;
 		dir = _d;
-		invDir = Vec3(1.0f / dir.x, 1.0f / dir.y, 1.0f / dir.z);
+		invDir = Vec3(
+			(fabs(dir.x) < EPSILON ? 1e10f : 1.0f / dir.x),
+			(fabs(dir.y) < EPSILON ? 1e10f : 1.0f / dir.y),
+			(fabs(dir.z) < EPSILON ? 1e10f : 1.0f / dir.z));
+			
 	}
 	Vec3 at(const float t) const
 	{
@@ -71,7 +75,7 @@ public:
 		vertices[0] = v0;
 		vertices[1] = v1;
 		vertices[2] = v2;
-		//The original code seemed wrong, so I rewrote e1 and e2
+		//I rewrote e1 and e2
 		e1 = vertices[1].p - vertices[0].p;
 		e2 = vertices[2].p - vertices[0].p;
 		n = e1.cross(e2).normalize();
@@ -257,10 +261,10 @@ public:
 
 		// Add BVH building code here
 		// Calculate bounds
-		for (auto& triangle : inputTriangles) {
-			bounds.extend(triangle.vertices[0].p);
-			bounds.extend(triangle.vertices[1].p);
-			bounds.extend(triangle.vertices[2].p);
+		for (int i = start; i < end; i++) {
+			bounds.extend(inputTriangles[i].vertices[0].p);
+			bounds.extend(inputTriangles[i].vertices[1].p);
+			bounds.extend(inputTriangles[i].vertices[2].p);
 		}
 
 		// If it has less than 8 triangles, it is a leaf node
@@ -275,11 +279,11 @@ public:
 		float bestCost = FLT_MAX;
 		int bestAxis = -1;
 		int bestSplit = -1;
-		for (int i = 0; i < 3; i++) {
+		for (int axis = 0; axis < 3; axis++) {
 			std::sort(inputTriangles.begin() + start, inputTriangles.begin() + end,
-				[i](Triangle& a, Triangle& b) {
-					float aCenter = a.vertices[0].p.coords[i] + a.vertices[1].p.coords[i] + a.vertices[2].p.coords[i];
-					float bCenter = b.vertices[0].p.coords[i] + b.vertices[1].p.coords[i] + b.vertices[2].p.coords[i];
+				[axis](Triangle& a, Triangle& b) {
+					float aCenter = a.vertices[0].p.coords[axis] + a.vertices[1].p.coords[axis] + a.vertices[2].p.coords[axis];
+					float bCenter = b.vertices[0].p.coords[axis] + b.vertices[1].p.coords[axis] + b.vertices[2].p.coords[axis];
 					return aCenter < bCenter;
 				});
 
@@ -307,7 +311,7 @@ public:
 
 				if (cost < bestCost) {
 					bestCost = cost;
-					bestAxis = i;
+					bestAxis = axis;
 					bestSplit = start+i;
 				}
 			}
