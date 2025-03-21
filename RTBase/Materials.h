@@ -20,6 +20,14 @@ public:
 	Frame frame;
 	BSDF* bsdf;
 	float t;
+	ShadingData() {}
+	ShadingData(Vec3 _x, Vec3 n)
+	{
+		x = _x;
+		gNormal = n;
+		sNormal = n;
+		bsdf = NULL;
+	}
 };
 
 class ShadingHelper
