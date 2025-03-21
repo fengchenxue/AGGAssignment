@@ -18,7 +18,7 @@ public:
 	float height = 0;
 	Vec3 origin;
 	Vec3 viewDirection;
-	float Alens;
+	float Afilm;
 	void init(Matrix ProjectionMatrix, int screenwidth, int screenheight)
 	{
 		projectionMatrix = ProjectionMatrix;
@@ -28,7 +28,7 @@ public:
 		float Wlens = (2.0f / ProjectionMatrix.a[1][1]);
 		float aspect = ProjectionMatrix.a[0][0] / ProjectionMatrix.a[1][1];
 		float Hlens = Wlens * aspect;
-		Alens = Wlens * Hlens;
+		Afilm = Wlens * Hlens;
 	}
 	void updateView(Matrix V)
 	{

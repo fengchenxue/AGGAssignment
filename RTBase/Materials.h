@@ -33,10 +33,15 @@ public:
 class ShadingHelper
 {
 public:
-	static float Dggx(Vec3 h, float alpha)
+	static float fresnelDielectric(float cosTheta, float iorInt, float iorExt)
 	{
 		// Add code here
 		return 1.0f;
+	}
+	static Colour fresnelConductor(float cosTheta, Colour ior, Colour k)
+	{
+		// Add code here
+		return Colour(1.0f, 1.0f, 1.0f);
 	}
 	static float lambdaGGX(Vec3 wi, float alpha)
 	{
@@ -48,17 +53,10 @@ public:
 		// Add code here
 		return 1.0f;
 	}
-	static float fresnelDielectric(float cosTheta, float iorInt, float iorExt)
+	static float Dggx(Vec3 h, float alpha)
 	{
-		// Calculate refracted direction
-		// Calculate Fresnel (|| and T)
-		// return average^2
+		// Add code here
 		return 1.0f;
-	}
-	static Colour fresnelCondutor(float cosTheta, Colour ior, Colour k)
-	{
-		// Calculate Fresnel term for Conductors here
-		return Colour(1.0f, 1.0f, 1.0f);
 	}
 };
 
@@ -107,7 +105,6 @@ public:
 	}
 	Colour evaluate(const ShadingData& shadingData, const Vec3& wi)
 	{
-		// Add correct evaluation code here
 		return albedo->sample(shadingData.tu, shadingData.tv) / M_PI;
 	}
 	float PDF(const ShadingData& shadingData, const Vec3& wi)
