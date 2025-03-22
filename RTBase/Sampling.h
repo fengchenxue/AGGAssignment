@@ -51,7 +51,7 @@ public:
 		float phi = 2.0f * M_PI * r2;
 		float x = r * cosf(phi);
 		float y = r * sinf(phi);
-		float z = sqrtf(std::max(0.0f, 1.0f - x*x-y*y));
+		float z = sqrtf(std::max(0.0f, 1.0f - r1));
 		return Vec3(x, y, z);
 	}
 	static float cosineHemispherePDF(const Vec3 wi)

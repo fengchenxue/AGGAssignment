@@ -73,7 +73,8 @@ public:
 	void build()
 	{
 		// Add BVH building code here
-		bvh->build(triangles, 0, triangles.size() - 1);
+		if (triangles.size() > 0) bvh->build(triangles, 0, triangles.size() - 1);
+		else std::cout << "No triangles in scene!" << std::endl;
 
 		// Do not touch the code below this line!
 		// Build light list
@@ -90,6 +91,7 @@ public:
 	}
 	IntersectionData traverse(const Ray& ray)
 	{
+		//----------unfinished-----------
 		IntersectionData intersection;
 		intersection.t = FLT_MAX;
 		for (int i = 0; i < triangles.size(); i++)

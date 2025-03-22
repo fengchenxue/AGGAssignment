@@ -123,7 +123,8 @@ public:
 		delete[] texels;
 		if (alpha != NULL)
 		{
-			delete alpha;
+			delete[] alpha;
+			alpha = NULL;
 		}
 	}
 };
