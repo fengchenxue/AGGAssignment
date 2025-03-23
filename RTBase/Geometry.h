@@ -266,6 +266,11 @@ public:
 		r = NULL;
 		l = NULL;
 	}
+	~BVHNode()
+	{
+		if (r) delete r;
+		if (l) delete l;
+	}
 	// Note there are several options for how to implement the build method. Update this as required
 	void build(std::vector<Triangle>& inputTriangles,int start, int end)
 	{
