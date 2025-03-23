@@ -65,6 +65,7 @@ int main(int argc, char *argv[])
 	canvas.create((unsigned int)scene->camera.width, (unsigned int)scene->camera.height, "Tracer", 1.0f);
 	RayTracer rt;
 	rt.init(scene, &canvas);
+	//scene->debugBVH();
 	bool running = true;
 	GamesEngineeringBase::Timer timer;
 	while (running)

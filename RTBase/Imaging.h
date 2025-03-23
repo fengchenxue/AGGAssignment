@@ -156,7 +156,7 @@ public:
 class GaussianFilter : public ImageFilter
 {
 public:
-	GaussianFilter(float _alpha, float _radius)
+	GaussianFilter(float _alpha=2.0f, float _radius=2.0f)
 		: alpha(_alpha), radius(_radius){}
 
 	float filter(const float x, const float y) const override
@@ -224,9 +224,9 @@ public:
 
 		int r = filter->size();
 		int x_start = std::max(0,static_cast<int>(floorf(x - r)));
-		int x_end = std::min(static_cast<int>(width),static_cast<int>(floorf(x + r)));
+		int x_end = std::min(static_cast<int>(width-1),static_cast<int>(floorf(x + r)));
 		int y_start = std::max(0, static_cast<int>(floorf(y - r)));
-		int y_end = std::min(static_cast<int>(height), static_cast<int>(floorf(y + r)));
+		int y_end = std::min(static_cast<int>(height-1), static_cast<int>(floorf(y + r)));
 
 		for (int i = x_start; i <= x_end; i++)
 		{

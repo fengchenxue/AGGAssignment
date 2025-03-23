@@ -82,7 +82,7 @@ public:
 	void build()
 	{
 		// Add BVH building code here
-		if (triangles.size() > 0) bvh->build(triangles, 0, triangles.size() - 1);
+		if (triangles.size() > 0) bvh->build(triangles, 0, triangles.size());
 		else std::cout << "No triangles in scene!" << std::endl;
 
 		// Do not touch the code below this line!
@@ -100,10 +100,11 @@ public:
 	}
 	IntersectionData traverse(const Ray& ray)
 	{
-		//----------unfinished-----------
+		//change the original code to use the BVH traversal
 		IntersectionData intersection;
 		intersection.t = FLT_MAX;
-		for (int i = 0; i < triangles.size(); i++)
+		bvh->traverse(ray, triangles, intersection);
+		/*for (int i = 0; i < triangles.size(); i++)
 		{
 			float t;
 			float u;
@@ -119,7 +120,7 @@ public:
 					intersection.gamma = 1.0f - (u + v);
 				}
 			}
-		}
+		}*/
 		return intersection;
 	}
 	Light* sampleLight(Sampler* sampler, float& pmf)
@@ -190,5 +191,9 @@ public:
 			shadingData.t = intersection.t;
 		}
 		return shadingData;
+	}
+
+	void debugBVH() {
+		bvh->debugBVH();
 	}
 };

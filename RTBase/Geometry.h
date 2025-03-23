@@ -295,9 +295,13 @@ public:
 		float bestCost = FLT_MAX;
 		int bestAxis = -1;
 		int bestSplit = -1;
+		//std::vector<Triangle> originalTriangles(inputTriangles.begin() + start, inputTriangles.begin() + end);
 		for (int axis = 0; axis < 3; axis++) {
-			std::sort(inputTriangles.begin() + start, inputTriangles.begin() + end,
-				[axis](Triangle& a, Triangle& b) {
+			//std::vector<Triangle> iTriangles(originalTriangles);
+			std::vector<Triangle> tempTriangles(inputTriangles.begin() + start, inputTriangles.begin() + end);
+			
+			std::stable_sort(tempTriangles.begin(), tempTriangles.end(),
+				[axis](const Triangle& a,const Triangle& b) {
 					float aCenter = a.vertices[0].p.coords[axis] + a.vertices[1].p.coords[axis] + a.vertices[2].p.coords[axis];
 					float bCenter = b.vertices[0].p.coords[axis] + b.vertices[1].p.coords[axis] + b.vertices[2].p.coords[axis];
 					return aCenter < bCenter;
@@ -306,15 +310,15 @@ public:
 			std::vector<AABB> leftBounds(numTriangles), rightBounds(numTriangles);
 			AABB box1, box2;
 			for (int i = 0; i < numTriangles; i++) {
-				box1.extend(inputTriangles[i + start].vertices[0].p);
-				box1.extend(inputTriangles[i + start].vertices[1].p);
-				box1.extend(inputTriangles[i + start].vertices[2].p);
+				box1.extend(tempTriangles[i].vertices[0].p);
+				box1.extend(tempTriangles[i].vertices[1].p);
+				box1.extend(tempTriangles[i].vertices[2].p);
 				leftBounds[i] = box1;
 			}
 			for (int i = numTriangles - 1; i >= 0; i--) {
-				box2.extend(inputTriangles[i + start].vertices[0].p);
-				box2.extend(inputTriangles[i + start].vertices[1].p);
-				box2.extend(inputTriangles[i + start].vertices[2].p);
+				box2.extend(tempTriangles[i].vertices[0].p);
+				box2.extend(tempTriangles[i].vertices[1].p);
+				box2.extend(tempTriangles[i].vertices[2].p);
 				rightBounds[i] = box2;
 			}
 
@@ -333,7 +337,7 @@ public:
 			}
 		}
 		// can not find best spilt
-		if (bestAxis==-1)
+		if (bestAxis==-1 || bestSplit <= start || bestSplit >= end)
 		{
 			offset = start;
 			num = numTriangles;
@@ -341,8 +345,8 @@ public:
 		}
 
 		//sort triangle vector according to best axis
-		std::sort(inputTriangles.begin() + start, inputTriangles.begin() + end,
-			[bestAxis](Triangle& a, Triangle& b) {
+		std::stable_sort(inputTriangles.begin() + start, inputTriangles.begin() + end,
+			[bestAxis](const Triangle& a,const Triangle& b) {
 				float aCenter = a.vertices[0].p.coords[bestAxis] + a.vertices[1].p.coords[bestAxis] + a.vertices[2].p.coords[bestAxis];
 				float bCenter = b.vertices[0].p.coords[bestAxis] + b.vertices[1].p.coords[bestAxis] + b.vertices[2].p.coords[bestAxis];
 				return aCenter < bCenter;
@@ -374,8 +378,8 @@ public:
 			}
 		}
 		else {
-			if (l) traverse(ray, triangles, intersection);
-			if (r) traverse(ray, triangles, intersection);
+			if (l) l->traverse(ray, triangles, intersection);
+			if (r) r->traverse(ray, triangles, intersection);
 		}
 	}
 	IntersectionData traverse(const Ray& ray, const std::vector<Triangle>& triangles)
@@ -404,6 +408,24 @@ public:
 			if (!vis) return false;
 			vis = r ? r->traverseVisible(ray, triangles, maxT) : true;
 			return vis;
+		}
+	}
+	void debugBVH(int depth = 0)
+	{
+		std::string indent(depth * 2, ' ');
+
+		if (isLeaf()) {
+			std::cout << indent<< "Depth: " << depth << " Leaf: " << num << " triangles | ";
+			std::cout << "AABB: min(" << bounds.min.x << ", " << bounds.min.y << ", " << bounds.min.z << "), ";
+			std::cout << "max(" << bounds.max.x << ", " << bounds.max.y << ", " << bounds.max.z << ")\n";
+		}
+		else {
+			std::cout << indent << "Depth: " << depth << " Node: ";
+			std::cout << "AABB: min(" << bounds.min.x << ", " << bounds.min.y << ", " << bounds.min.z << "), ";
+			std::cout << "max(" << bounds.max.x << ", " << bounds.max.y << ", " << bounds.max.z << ")\n";
+
+			if (l) l->debugBVH(depth + 1);
+			if (r) r->debugBVH(depth + 1);
 		}
 	}
 };
