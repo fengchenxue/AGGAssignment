@@ -117,7 +117,18 @@ public:
 	// Add code here
 	Vec3 sample(Sampler* sampler, float& pdf)
 	{
-		return Vec3(0, 0, 0);
+		float u1 = sampler->next();
+		float u2 = sampler->next();
+
+		float su1 = sqrt(u1);
+		float alpha = 1.0f - su1;
+		float beta = u2 * su1;
+		float gamma = 1.0f - alpha - beta;
+
+		Vec3 p = vertices[0].p * alpha + vertices[1].p * beta + vertices[2].p * gamma;
+		pdf = invarea;
+
+		return p;
 	}
 	Vec3 gNormal()
 	{
@@ -198,15 +209,15 @@ public:
 	bool rayIntersect(Ray& r, float& t)
 	{
 		Vec3 l = r.o - centre;
-		float b = 2*Dot(l, r.dir);
+		float b = Dot(l, r.dir);
 		float c = Dot(l, l) - radius * radius;
 
-		float delta = b * b - 4 * c;
+		float delta = b * b - c;
 		if (delta < 0) return false;
 		
 		float sqrtDelta = sqrt(delta);
-		float t0 = (-b - sqrtDelta) / 2;
-		float t1 = (-b + sqrtDelta) / 2;
+		float t0 = -b - sqrtDelta;
+		float t1 = -b + sqrtDelta;
 
 		if (t0 >= 0.0f) {
 			t = t0;
