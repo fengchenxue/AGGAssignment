@@ -178,16 +178,15 @@ public:
 		{
 			for (unsigned int x = 0; x < film->width; x++)
 			{
-				float px = x + 0.5f;
-				float py = y + 0.5f;
+				//-----------need correct sampler index----------
+				float px = x + samplers[0].next();
+				float py = y + samplers[0].next();	
 				Ray ray = scene->camera.generateRay(px, py);
 				//Colour col = viewNormals(ray);
 				//Colour col = albedo(ray);
 
 				Colour pathThroughput = Colour(1.0f, 1.0f, 1.0f);
-				int depth = 0;
-
-				Colour col = pathTrace(ray, pathThroughput, depth, &samplers[0],true);
+				Colour col = pathTrace(ray, pathThroughput, 0, &samplers[0],true);
 
 				film->splat(px, py, col);
 				unsigned char r = (unsigned char)(col.r * 255);

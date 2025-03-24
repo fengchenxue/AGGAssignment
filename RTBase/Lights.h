@@ -68,8 +68,13 @@ public:
 	Vec3 sampleDirectionFromLight(Sampler* sampler, float& pdf)
 	{
 		// Add code to sample a direction from the light
-		Vec3 wi = Vec3(0, 0, 1);
+		/*Vec3 wi = Vec3(0, 0, 1);
 		pdf = 1.0f;
+		Frame frame;
+		frame.fromVector(triangle->gNormal());
+		return frame.toWorld(wi);*/
+		Vec3 wi = SamplingDistributions::cosineSampleHemisphere(sampler->next(), sampler->next());
+		pdf = SamplingDistributions::cosineHemispherePDF(wi);
 		Frame frame;
 		frame.fromVector(triangle->gNormal());
 		return frame.toWorld(wi);

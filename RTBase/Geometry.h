@@ -295,9 +295,7 @@ public:
 		float bestCost = FLT_MAX;
 		int bestAxis = -1;
 		int bestSplit = -1;
-		//std::vector<Triangle> originalTriangles(inputTriangles.begin() + start, inputTriangles.begin() + end);
 		for (int axis = 0; axis < 3; axis++) {
-			//std::vector<Triangle> iTriangles(originalTriangles);
 			std::vector<Triangle> tempTriangles(inputTriangles.begin() + start, inputTriangles.begin() + end);
 			
 			std::stable_sort(tempTriangles.begin(), tempTriangles.end(),
