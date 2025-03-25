@@ -69,7 +69,7 @@ public:
 			}
 			return shadingData.bsdf->evaluate(shadingData, Vec3(0, 1, 0));
 		}
-		return scene->background->evaluate(shadingData, r.dir);
+		return scene->background->evaluate(r.dir);
 	}
 	Colour viewNormals(Ray& r)
 	{

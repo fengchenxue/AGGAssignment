@@ -18,7 +18,7 @@ class Light
 {
 public:
 	virtual Vec3 sample(const ShadingData& shadingData, Sampler* sampler, Colour& emittedColour, float& pdf) = 0;
-	virtual Colour evaluate(const ShadingData& shadingData, const Vec3& wi) = 0;
+	virtual Colour evaluate(const Vec3& wi) = 0;
 	virtual float PDF(const ShadingData& shadingData, const Vec3& wi) = 0;
 	virtual bool isArea() = 0;
 	virtual Vec3 normal(const ShadingData& shadingData, const Vec3& wi) = 0;
@@ -37,7 +37,7 @@ public:
 		emittedColour = emission;
 		return triangle->sample(sampler, pdf);
 	}
-	Colour evaluate(const ShadingData& shadingData, const Vec3& wi)
+	Colour evaluate(const Vec3& wi)
 	{
 		if (Dot(wi, triangle->gNormal()) < 0)
 		{
@@ -91,7 +91,7 @@ public:
 		reflectedColour = emission;
 		return wi;
 	}
-	Colour evaluate(const ShadingData& shadingData, const Vec3& wi)
+	Colour evaluate(const Vec3& wi)
 	{
 		return emission;
 	}
@@ -140,10 +140,10 @@ public:
 		// Assignment: Update this code to importance sampling lighting based on luminance of each pixel
 		Vec3 wi = SamplingDistributions::uniformSampleSphere(sampler->next(), sampler->next());
 		pdf = SamplingDistributions::uniformSpherePDF(wi);
-		reflectedColour = evaluate(shadingData, wi);
+		reflectedColour = evaluate(wi);
 		return wi;
 	}
-	Colour evaluate(const ShadingData& shadingData, const Vec3& wi)
+	Colour evaluate(const Vec3& wi)
 	{
 		float u = atan2f(wi.z, wi.x);
 		u = (u < 0.0f) ? u + (2.0f * M_PI) : u;
