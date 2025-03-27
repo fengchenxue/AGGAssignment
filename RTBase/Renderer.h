@@ -87,16 +87,17 @@ public:
 		}
 		return Colour(0.0f, 0.0f, 0.0f);
 	}
-	Colour pathTrace(Ray& r, Colour& pathThroughput, int depth, Sampler* sampler, bool canHitLight = true)
+	Colour pathTrace(Ray& r, Colour pathThroughput, int depth, Sampler* sampler, bool canHitLight = true)
 	{
 		// Add pathtracer code here
 		IntersectionData intersection = scene->traverse(r);
 		ShadingData shadingData = scene->calculateShadingData(intersection, r);
 		if (shadingData.t < FLT_MAX)
 		{
+			//------Lights------
 			if (shadingData.bsdf->isLight())
 			{
-				if (canHitLight == true)
+				if (canHitLight)
 				{
 					return pathThroughput * shadingData.bsdf->emit(shadingData, shadingData.wo);
 				}
@@ -105,44 +106,48 @@ public:
 					return Colour(0.0f, 0.0f, 0.0f);
 				}
 			}
-			Colour direct = pathThroughput * computeDirect(shadingData, sampler);
+
+			Colour Lo(0.0f, 0.0f, 0.0f);
+			//------Emissive Materials------
+			if (shadingData.bsdf->isEmissive())
+			{
+				Lo = Lo + pathThroughput* shadingData.bsdf->emit(shadingData, shadingData.wo);
+			}
+
+			//------Direct Lighting------
+			Lo = Lo + pathThroughput * computeDirect(shadingData, sampler);
+			//Max Depth
 			if (depth > MAX_DEPTH)
 			{
-				return direct;
+				return Lo;
 			}
-			float russianRouletteProbability = min(pathThroughput.Lum(), 0.9f);
+			//Russian Roulette
+			float russianRouletteProbability = max (0.0f, min(pathThroughput.Lum(), 0.9f));
 			if (sampler->next() < russianRouletteProbability)
 			{
 				pathThroughput = pathThroughput / russianRouletteProbability;
 			}
 			else
 			{
-				return direct;
+				return Lo;
 			}
 
+			//------Indirect Lighting------
+			//need to solve glass material
 			Colour bsdf;
 			float pdf;
-			Vec3 wi;
-			if (shadingData.bsdf->isPureSpecular()) {
-				wi = shadingData.bsdf->sample(shadingData, sampler, bsdf, pdf);
-			}
-			else
-			{
-				wi = SamplingDistributions::cosineSampleHemisphere(sampler->next(), sampler->next());
-				pdf = SamplingDistributions::cosineHemispherePDF(wi);
-				wi = shadingData.frame.toWorld(wi);
-				bsdf = shadingData.bsdf->evaluate(shadingData, wi);
-			}
+			Vec3 wi = shadingData.bsdf->sample(shadingData, sampler, bsdf, pdf);
 
 			float cosTheta = Dot(wi, shadingData.sNormal);
 			if (pdf > 0.0f && cosTheta > 0.0f) {
-				pathThroughput = pathThroughput * bsdf * fabsf(Dot(wi, shadingData.sNormal)) / pdf;
-				r.init(shadingData.x + (wi * EPSILON), wi);
-				return (direct + pathTrace(r, pathThroughput, depth + 1, sampler, shadingData.bsdf->isPureSpecular()));
+				pathThroughput = pathThroughput * bsdf * cosTheta / pdf;
+				Ray nextRay;
+				nextRay.init(shadingData.x + (wi * EPSILON), wi);
+				return (Lo + pathTrace(nextRay, pathThroughput, depth + 1, sampler, shadingData.bsdf->isPureSpecular()));
 			}
-			else return direct;
+			return Lo;
 		}
-		return scene->background->evaluate(shadingData, r.dir);
+		return scene->background->evaluate(r.dir);
 	}
 	Colour direct(Ray& r, Sampler* sampler)
 	{
@@ -200,7 +205,7 @@ public:
 
 				Colour pathThroughput = Colour(1.0f, 1.0f, 1.0f);
 				Colour col = pathTrace(ray, pathThroughput, 0, &samplers[0],true);
-
+				
 				film->splat(px, py, col);
 				unsigned char r = (unsigned char)(col.r * 255);
 				unsigned char g = (unsigned char)(col.g * 255);

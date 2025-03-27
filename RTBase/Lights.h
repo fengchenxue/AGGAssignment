@@ -7,6 +7,113 @@
 
 #pragma warning( disable : 4244)
 
+//used in EnvironmentMap for importance sampling
+class Distribution1D
+{
+public:
+	// density function
+	std::vector<float> func;
+	// normalized and cumulative density function
+	std::vector<float> cdf;
+	float area;
+	Distribution1D(std::vector<float>& _func) :func(_func)
+	{
+		cdf.resize(func.size()+1);
+		cdf[0] = 0;
+		for (int i = 0; i < func.size(); i++)
+		{
+			cdf[i+1] = cdf[i] + func[i];
+		}
+		area = cdf[cdf.size()];
+
+		//robustness measure
+		if (fabs(area)<EPSILON){
+			for (int i = 1; i <= cdf.size(); i++){
+				cdf[i] = (float)i / (float)cdf.size();
+			}
+			area = 1.0f;
+		}
+		else
+		{
+			for (int i = 0; i < cdf.size(); i++)
+			{
+				cdf[i] = cdf[i] / area;
+			}
+		}
+	}
+	//return the neareast index of a random index
+	int sample(float u, float &pdf)
+	{
+		auto in = std::lower_bound(cdf.begin(), cdf.end(), u);
+		int index = std::max(0, (int)(in - cdf.begin() - 1));
+		pdf = func[index] / area;
+		return index;
+	}
+
+	float pdf(int index)
+	{
+		return func[index] / area;
+	}
+};
+
+class Distribution2D
+{
+public:
+	std::vector<Distribution1D*> pConditionalV;
+	Distribution1D* pMarginal;
+	Distribution2D(Texture* envmap)
+	{
+		int width = envmap->width;
+		int height = envmap->height;
+
+		std::vector<float> marginalFunc(height);
+		pConditionalV.resize(height);
+
+		for (int v = 0; v < height; v++)
+		{
+			std::vector<float> f(width);
+			float sinTheta = sinf(M_PI * ((float)v + 0.5f) / (float)height);
+			for (int u = 0; u < width; u++)
+			{
+				f[u] = envmap->texels[(v * width) + u].Lum() * sinTheta;
+			}
+			pConditionalV[v] = new Distribution1D(f);
+			marginalFunc[v] = pConditionalV[v]->area;
+		}
+		pMarginal = new Distribution1D(marginalFunc);
+
+	}
+	void sampleContinuous(float u0, float u1, float& u, float& v, float& pdf) const {
+		float pdf0, pdf1;
+		int vIdx = pMarginal->sample(u1, pdf1);
+		int uIdx = pConditionalV[vIdx]->sample(u0, pdf0);
+
+		u = (uIdx + 0.5f) / pConditionalV[vIdx]->func.size();
+		v = (vIdx + 0.5f) / pMarginal->func.size();
+
+		pdf = pdf0 * pdf1;
+	}
+
+	float pdf(float u, float v) const {
+		int iu = std::clamp(int(u * pConditionalV[0]->func.size()), 0, int(pConditionalV[0]->func.size()) - 1);
+		int iv = std::clamp(int(v * pMarginal->func.size()), 0, int(pMarginal->func.size()) - 1);
+
+		float pdfU = pConditionalV[iv]->pdf(iu);
+		float pdfV = pMarginal->pdf(iv);
+
+		return pdfU * pdfV;
+	}
+
+	~Distribution2D() {
+		for (auto c : pConditionalV)
+			delete c;
+		delete pMarginal;
+	}
+
+};
+
+
+
 class SceneBounds
 {
 public:
@@ -147,6 +254,12 @@ public:
 		pdf = SamplingDistributions::uniformSpherePDF(wi);
 		reflectedColour = evaluate(wi);
 		return wi;
+
+		//float u1 = sampler->next();
+		//float u2 = sampler->next();
+
+
+
 	}
 	Colour evaluate(const Vec3& wi)
 	{

@@ -59,6 +59,7 @@ public:
 		return 1.0f;
 	}
 };
+#define EMISSIVE_LUMINANCE_THRESHOLD 1.0f
 
 class BSDF
 {
@@ -69,7 +70,12 @@ public:
 	virtual float PDF(const ShadingData& shadingData, const Vec3& wi) = 0;
 	virtual bool isPureSpecular() = 0;
 	virtual bool isTwoSided() = 0;
+	//if lum >= 1, it is a light source, if 1 > lum > 0, it is emissive material
 	bool isLight()
+	{
+		return emission.Lum() >= EMISSIVE_LUMINANCE_THRESHOLD ? true : false;
+	}
+	bool isEmissive()
 	{
 		return emission.Lum() > 0 ? true : false;
 	}
@@ -77,6 +83,7 @@ public:
 	{
 		emission = _emission;
 	}
+	//light source emission
 	Colour emit(const ShadingData& shadingData, const Vec3& wi)
 	{
 		return emission;
