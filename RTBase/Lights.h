@@ -13,7 +13,7 @@ class Distribution1D
 public:
 	// density function
 	std::vector<float> func;
-	// normalized and cumulative density function
+	// normalized and cumulative density function, ranges from 0 to 1
 	std::vector<float> cdf;
 	float area;
 	Distribution1D(std::vector<float>& _func) :func(_func)
@@ -41,11 +41,11 @@ public:
 			}
 		}
 	}
-	//return the neareast index(>=u) of a random index
+	//return the neareast index(>=u) -1 with a random input number
 	int sample(float u, float &pdf)
 	{
 		auto in = std::lower_bound(cdf.begin(), cdf.end(), u);
-		int index = std::max(0, (int)(in - cdf.begin() - 1));
+		int index = std::clamp((int)(in - cdf.begin() - 1), 0, (int)func.size()-1);
 		pdf = func[index] / area;
 		return index;
 	}
@@ -251,24 +251,44 @@ class EnvironmentMap : public Light
 {
 public:
 	Texture* env;
+	Distribution2D* distribution;
 	EnvironmentMap(Texture* _env)
 	{
 		env = _env;
+		distribution = new Distribution2D(env);
 	}
+	~EnvironmentMap()
+	{
+		delete distribution;
+	}
+
 	Vec3 sample(const ShadingData& shadingData, Sampler* sampler, Colour& reflectedColour, float& pdf)
 	{
 		// Assignment: Update this code to importance sampling lighting based on luminance of each pixel
-		Vec3 wi = SamplingDistributions::uniformSampleSphere(sampler->next(), sampler->next());
-		pdf = SamplingDistributions::uniformSpherePDF(wi);
+		float mapPDF;
+		float u, v;
+		distribution->sampleContinuous(sampler->next(), sampler->next(), u, v, mapPDF);
+
+		float theta = v * M_PI;
+		float phi = u * 2.0f * M_PI;
+
+		float sinTheta = sinf(theta);
+		Vec3 wi = Vec3(cosf(phi) * sinTheta, cosf(theta), sinf(phi) * sinTheta);
+		
+		//mapPDF is PDF_u * PDF_v,that means mapPDF=dP/(dv*du). 
+		//Now we need to get dP/dw. dw=2*pi*sin(theta)*du*dv
+		// dP/dw= dP/(dv*du) /(2*pi*sin(theta)). So the final PDF is density function of a solid angle.
+		pdf = (sinTheta <= EPSILON) ? 0.0f : mapPDF / (2.0f * M_PI * M_PI * sinTheta);
 		reflectedColour = evaluate(wi);
+
 		return wi;
 
-		//float u1 = sampler->next();
-		//float u2 = sampler->next();
-
-
-
+		/*Vec3 wi = SamplingDistributions::uniformSampleSphere(sampler->next(), sampler->next());
+		pdf = SamplingDistributions::uniformSpherePDF(wi);
+		reflectedColour = evaluate(wi);
+		return wi;*/
 	}
+	//u islongitude, v is latitude. They are normalized to [0,1]
 	Colour evaluate(const Vec3& wi)
 	{
 		float u = atan2f(wi.z, wi.x);
@@ -280,7 +300,17 @@ public:
 	float PDF(const ShadingData& shadingData, const Vec3& wi)
 	{
 		// Assignment: Update this code to return the correct PDF of luminance weighted importance sampling
-		return SamplingDistributions::uniformSpherePDF(wi);
+		//return SamplingDistributions::uniformSpherePDF(wi);
+		float u = atan2f(wi.z, wi.x);
+		u = (u < 0.0f) ? u + (2.0f * M_PI) : u;
+		u = u/ (2.0f * M_PI);
+		float v = acosf(wi.y) / M_PI;
+
+		float sinTheta = sin(v * M_PI);
+		if (sinTheta< EPSILON) return 0.0f;
+
+		float mapPdf = distribution->pdf(u, v);
+		return mapPdf / (2.0f * M_PI * M_PI * sinTheta);
 	}
 	bool isArea()
 	{
@@ -316,8 +346,10 @@ public:
 	Vec3 sampleDirectionFromLight(Sampler* sampler, float& pdf)
 	{
 		// Replace this tabulated sampling of environment maps
-		Vec3 wi = SamplingDistributions::uniformSampleSphere(sampler->next(), sampler->next());
+		/*Vec3 wi = SamplingDistributions::uniformSampleSphere(sampler->next(), sampler->next());
 		pdf = SamplingDistributions::uniformSpherePDF(wi);
-		return wi;
+		return wi;*/
+		Colour emittedColour;
+		return sample(ShadingData(), sampler, emittedColour, pdf);
 	}
 };

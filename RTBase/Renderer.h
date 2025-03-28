@@ -65,6 +65,10 @@ public:
 				// Trace
 				if (scene->visible(shadingData.x, p))
 				{
+					if (pdf <= EPSILON) {
+						//std::cout << pdf << std::endl;
+						return Colour(0.0f, 0.0f, 0.0f); 
+					}
 					// Shade
 					return shadingData.bsdf->evaluate(shadingData, wi) * emitted * GTerm / (pmf * pdf);
 				}
@@ -80,6 +84,10 @@ public:
 				// Trace
 				if (scene->visible(shadingData.x, shadingData.x + (p * 10000.0f)))
 				{
+					if (pdf <= EPSILON) {
+						//std::cout << pdf << std::endl;
+						return Colour(0.0f, 0.0f, 0.0f);
+					}
 					// Shade
 					return shadingData.bsdf->evaluate(shadingData, wi) * emitted * GTerm / (pmf * pdf);
 				}
