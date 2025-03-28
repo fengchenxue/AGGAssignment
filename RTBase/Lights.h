@@ -41,7 +41,7 @@ public:
 			}
 		}
 	}
-	//return the neareast index of a random index
+	//return the neareast index(>=u) of a random index
 	int sample(float u, float &pdf)
 	{
 		auto in = std::lower_bound(cdf.begin(), cdf.end(), u);
@@ -59,7 +59,9 @@ public:
 class Distribution2D
 {
 public:
+	// every pixel has a weight
 	std::vector<Distribution1D*> pConditionalV;
+	// the total weight of each row
 	Distribution1D* pMarginal;
 	Distribution2D(Texture* envmap)
 	{
@@ -72,9 +74,12 @@ public:
 		for (int v = 0; v < height; v++)
 		{
 			std::vector<float> f(width);
+			// +0.5f because v starts from 0 rather than 1
 			float sinTheta = sinf(M_PI * ((float)v + 0.5f) / (float)height);
-			for (int u = 0; u < width; u++)
-			{
+			for (int u = 0; u < width; u++){
+				// *sinTheta because the weight of the top and bottom of the sphere should be smaller than the middle,
+				// or the samples will be too concentrated in the top and bottom
+				// dA=sin(theta)d(theta)d(phi) , so the weight should multiple sin(theta) 
 				f[u] = envmap->texels[(v * width) + u].Lum() * sinTheta;
 			}
 			pConditionalV[v] = new Distribution1D(f);
@@ -83,20 +88,23 @@ public:
 		pMarginal = new Distribution1D(marginalFunc);
 
 	}
-	void sampleContinuous(float u0, float u1, float& u, float& v, float& pdf) const {
-		float pdf0, pdf1;
-		int vIdx = pMarginal->sample(u1, pdf1);
-		int uIdx = pConditionalV[vIdx]->sample(u0, pdf0);
+	//input: 2 random numbers
+	//output: the normalized position of the sample in the texture and PDF
+	void sampleContinuous(float u1, float u2, float& u, float& v, float& pdf) const {
+		float pdf1, pdf2;
+		int vIdx = pMarginal->sample(u2, pdf2);
+		int uIdx = pConditionalV[vIdx]->sample(u1, pdf1);
 
+		//normalize the position to [0,1]
 		u = (uIdx + 0.5f) / pConditionalV[vIdx]->func.size();
 		v = (vIdx + 0.5f) / pMarginal->func.size();
 
-		pdf = pdf0 * pdf1;
+		pdf = pdf1 * pdf2;
 	}
 
 	float pdf(float u, float v) const {
-		int iu = std::clamp(int(u * pConditionalV[0]->func.size()), 0, int(pConditionalV[0]->func.size()) - 1);
-		int iv = std::clamp(int(v * pMarginal->func.size()), 0, int(pMarginal->func.size()) - 1);
+		int iu = std::clamp(int(u * pConditionalV[0]->func.size()), 0, int(pConditionalV[0]->func.size()-1));
+		int iv = std::clamp(int(v * pMarginal->func.size()), 0, int(pMarginal->func.size()-1));
 
 		float pdfU = pConditionalV[iv]->pdf(iu);
 		float pdfV = pMarginal->pdf(iv);
