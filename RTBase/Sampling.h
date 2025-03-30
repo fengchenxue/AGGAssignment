@@ -74,4 +74,18 @@ public:
 		// Add code here
 		return 1.0f/(4.0f*M_PI);
 	}
+
+	//microfacet normal h in local coordinate system
+	static Vec3 ggxSampleHemisphere(float r1, float r2, float alpha)
+	{
+		float phi = 2.0f * M_PI * r1;
+		float cosTheta = sqrtf((1.0f - r2) / (1.0f + (alpha * alpha - 1.0f) * r2));
+		float sinTheta = sqrtf(std::max(0.0f, 1.0f - cosTheta * cosTheta));
+		
+		float x = sinTheta * cosf(phi);
+		float y = sinTheta * sinf(phi);
+		float z = cosTheta;
+		
+		return Vec3(x, y, z);
+	}
 };
