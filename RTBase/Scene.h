@@ -6,6 +6,7 @@
 #include "Imaging.h"
 #include "Materials.h"
 #include "Lights.h"
+#include<unordered_map>
 
 class Camera
 {
@@ -72,6 +73,7 @@ public:
 class Scene
 {
 public:
+	std::unordered_map<int, int> triangleIDtoLightIndex;
 	std::vector<Triangle> triangles;
 	std::vector<BSDF*> materials;
 	std::vector<Light*> lights;
@@ -82,7 +84,7 @@ public:
 	void build()
 	{
 		// Add BVH building code here
-		if (triangles.size() > 0) bvh->build(triangles, 0, triangles.size());
+		if (triangles.size() > 0) bvh->build(triangles, 0, static_cast<int>(triangles.size()));
 		else std::cout << "No triangles in scene!" << std::endl;
 
 		// Do not touch the code below this line!
@@ -95,6 +97,9 @@ public:
 				light->triangle = &triangles[i];
 				light->emission = materials[triangles[i].materialIndex]->emission;
 				lights.push_back(light);
+
+				//Sorry to add code here, but I really need this
+				triangleIDtoLightIndex[i] = lights.size() - 1;
 			}
 		}
 	}
@@ -104,23 +109,6 @@ public:
 		IntersectionData intersection;
 		intersection.t = FLT_MAX;
 		bvh->traverse(ray, triangles, intersection);
-		/*for (int i = 0; i < triangles.size(); i++)
-		{
-			float t;
-			float u;
-			float v;
-			if (triangles[i].rayIntersect(ray, t, u, v))
-			{
-				if (t < intersection.t)
-				{
-					intersection.t = t;
-					intersection.ID = i;
-					intersection.alpha = u;
-					intersection.beta = v;
-					intersection.gamma = 1.0f - (u + v);
-				}
-			}
-		}*/
 		return intersection;
 	}
 	Light* sampleLight(Sampler* sampler, float& pmf)
@@ -193,7 +181,15 @@ public:
 		return shadingData;
 	}
 
+	//new function
 	void debugBVH() {
 		bvh->debugBVH();
+	}
+	//new function to get light from triangle ID
+	Light* getLightFromTriangleID(int id)
+	{
+		if (triangleIDtoLightIndex.find(id) != triangleIDtoLightIndex.end())
+			return lights[triangleIDtoLightIndex[id]];
+		return nullptr;
 	}
 };

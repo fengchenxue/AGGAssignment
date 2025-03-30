@@ -12,6 +12,12 @@
 #include <functional>
 
 #define MAX_DEPTH 5
+inline float MISWeight(float pdf1, float pdf2)
+{
+	float a2 = pdf1 * pdf1;
+	float b2 = pdf2 * pdf2;
+	return a2 / (a2 + b2 + 1e-12f);
+}
 
 class RayTracer
 {
@@ -41,80 +47,137 @@ public:
 	}
 	Colour computeDirect(ShadingData shadingData, Sampler* sampler)
 	{
-		// Is surface is specular we cannot computing direct lighting
-		if (shadingData.bsdf->isPureSpecular() == true)
+		Colour L_light(0.0f, 0.0f, 0.0f);
+		Colour L_bsdf(0.0f, 0.0f, 0.0f);
+		
+		//-------light sampling-------
+		// Pure specular materials and refractive materials only have bsdf sampling, NO direct lighting sampling
+		if (shadingData.bsdf->isPureSpecular() == false)
 		{
-			return Colour(0.0f, 0.0f, 0.0f);
-		}
-		// Sample a light
-		float pmf;
-		Light* light = scene->sampleLight(sampler, pmf);
-		// Sample a point on the light
-		float pdf;
-		Colour emitted;
-		Vec3 p = light->sample(shadingData, sampler, emitted, pdf);
-		if (light->isArea())
-		{
-			// Calculate GTerm
-			Vec3 wi = p - shadingData.x;
-			float l = wi.lengthSq();
-			wi = wi.normalize();
-			float GTerm = (max(Dot(wi, shadingData.sNormal), 0.0f) * max(-Dot(wi, light->normal(shadingData, wi)), 0.0f)) / l;
-			if (GTerm > 0)
-			{
-				// Trace
-				if (scene->visible(shadingData.x, p))
-				{
-					if (pdf <= EPSILON) {
-						//std::cout << pdf << std::endl;
-						return Colour(0.0f, 0.0f, 0.0f); 
+			// Sample a light
+			float pmf;
+			Light* light = scene->sampleLight(sampler, pmf);
+
+			// Sample a point on the light
+			float pdf;
+			float pdf_light;
+			float pdf_bsdf;
+			Colour emitted;
+
+			//For area light, p is a point on the light. For environment light, p is the direction to the light.
+			//For area light, pdf is based on area. For environment light, pdf is based on solid angle.
+			Vec3 p = light->sample(sampler, emitted, pdf,shadingData.x);
+
+			if (pdf > 1e-12) {
+				Vec3 wi;
+				float GTerm=0.0f;
+				bool visible = false;
+
+				if (light->isArea()){
+					wi = p - shadingData.x;
+					float l = wi.lengthSq();
+					wi = wi.normalize();
+					GTerm = (max(Dot(wi, shadingData.sNormal), 0.0f) * max(Dot(-wi, light->normal(wi)), 0.0f)) / l;
+					visible = (GTerm > 0 && scene->visible(shadingData.x+wi*EPSILON, p));
+					pdf_light = pdf * pmf;
+				}
+				else{
+					wi = p;
+					GTerm = max(Dot(wi, shadingData.sNormal), 0.0f);
+					visible = (GTerm > 0 && scene->visible(shadingData.x+wi*EPSILON, shadingData.x + (wi * 10000.0f)));
+					pdf_light = pdf * pmf;
+				}
+
+				if (visible){
+					pdf_bsdf = shadingData.bsdf->PDF(shadingData, wi);
+					float W = MISWeight(pdf_light, pdf_bsdf);
+					L_light = shadingData.bsdf->evaluate(shadingData, wi) * emitted * GTerm * W / pdf_light;
+				}
+			}
+
+			//------bsdf sampling------
+			pdf = 0.0f;
+			pdf_light = 0.0f;
+			pdf_bsdf = 0.0f;
+			Colour bsdf(0.0f, 0.0f, 0.0f);
+			emitted = Colour(0.0f, 0.0f, 0.0f);
+			float W = 0.0f;
+
+			Vec3 wi = shadingData.bsdf->sample(shadingData, sampler, bsdf, pdf_bsdf);
+			if (pdf_bsdf > 1e-12f) {
+				Ray shadowRay(shadingData.x + (wi * EPSILON), wi);
+				IntersectionData shadowIntersection = scene->traverse(shadowRay);
+				ShadingData shadowShadingData = scene->calculateShadingData(shadowIntersection, shadowRay);
+
+				if (shadowShadingData.t < FLT_MAX) {
+					if (shadowShadingData.bsdf->isLight()) {
+						emitted = shadowShadingData.bsdf->emit(shadowShadingData, -wi);
+						Light* hitlight = scene->getLightFromTriangleID(shadowIntersection.ID);
+
+						if (hitlight) {
+							pdf = hitlight->PDF(-wi,shadingData.x,shadowShadingData.x);
+							pdf_light = pdf* pmf;
+							W = MISWeight(pdf_bsdf, pdf_light);
+							float l = ( shadowShadingData.x - shadingData.x).lengthSq();
+							float GTerm = (max(Dot(wi, shadingData.sNormal), 0.0f) * max(Dot(-wi, hitlight->normal(wi)), 0.0f)) / l;
+							L_bsdf = bsdf * emitted *GTerm* W / pdf_bsdf;
+						}
 					}
-					// Shade
-					return shadingData.bsdf->evaluate(shadingData, wi) * emitted * GTerm / (pmf * pdf);
+
+				}
+				else {
+					// Environment light
+					emitted = scene->background->evaluate(wi);
+					pdf = scene->background->PDF(-wi, shadingData.x, shadowShadingData.x);
+					pdf_light = pdf * pmf;
+					W = MISWeight(pdf_bsdf, pdf_light);
+					float GTerm = max(Dot(wi, shadingData.sNormal), 0.0f);
+					L_bsdf = bsdf * emitted * GTerm * W / pdf_bsdf;
+
 				}
 			}
 		}
-		else
-		{
-			// Calculate GTerm
-			Vec3 wi = p;
-			float GTerm = max(Dot(wi, shadingData.sNormal), 0.0f);
-			if (GTerm > 0)
-			{
-				// Trace
-				if (scene->visible(shadingData.x, shadingData.x + (p * 10000.0f)))
-				{
-					if (pdf <= EPSILON) {
-						//std::cout << pdf << std::endl;
-						return Colour(0.0f, 0.0f, 0.0f);
+		//For specular material, only bsdf sampling
+		else {
+			float pdf_bsdf = 0.0f;
+			Colour bsdf(0.0f, 0.0f, 0.0f);
+			Colour emitted(0.0f, 0.0f, 0.0f);
+			Vec3 wi = shadingData.bsdf->sample(shadingData, sampler, bsdf, pdf_bsdf);
+			if (pdf_bsdf > 1e-12f) {
+				Ray shadowRay(shadingData.x + (wi * EPSILON), wi);
+				IntersectionData shadowIntersection = scene->traverse(shadowRay);
+				ShadingData shadowShadingData = scene->calculateShadingData(shadowIntersection, shadowRay);
+
+				if (shadowShadingData.t < FLT_MAX) {
+					if (shadowShadingData.bsdf->isLight()) {
+						emitted = shadowShadingData.bsdf->emit(shadowShadingData, -wi);
+						Light* hitlight = scene->getLightFromTriangleID(shadowIntersection.ID);
+						if (hitlight) {
+							float l = (shadowShadingData.x - shadingData.x).lengthSq();
+							float GTerm = (max(Dot(wi, shadingData.sNormal), 0.0f) * max(Dot(-wi, hitlight->normal(wi)), 0.0f)) / l;
+							L_bsdf = bsdf * emitted * GTerm  / pdf_bsdf;
+						}
 					}
-					// Shade
-					return shadingData.bsdf->evaluate(shadingData, wi) * emitted * GTerm / (pmf * pdf);
+
+				}
+				else {
+					// Environment light
+					emitted = scene->background->evaluate(wi);
+					float GTerm = max(Dot(wi, shadingData.sNormal), 0.0f);
+					L_bsdf = bsdf * emitted * GTerm / pdf_bsdf;
+
 				}
 			}
 		}
-		return Colour(0.0f, 0.0f, 0.0f);
+		return  L_light + L_bsdf;
 	}
-	Colour pathTrace(Ray& r, Colour pathThroughput, int depth, Sampler* sampler, bool canHitLight = true)
+	Colour pathTrace(Ray& r, Colour pathThroughput, int depth, Sampler* sampler)
 	{
 		// Add pathtracer code here
 		IntersectionData intersection = scene->traverse(r);
 		ShadingData shadingData = scene->calculateShadingData(intersection, r);
 		if (shadingData.t < FLT_MAX)
 		{
-			//------Lights------
-			if (shadingData.bsdf->isLight())
-			{
-				if (canHitLight)
-				{
-					return pathThroughput * shadingData.bsdf->emit(shadingData, shadingData.wo);
-				}
-				else
-				{
-					return Colour(0.0f, 0.0f, 0.0f);
-				}
-			}
-
 			Colour Lo(0.0f, 0.0f, 0.0f);
 			//------Emissive Materials------
 			if (shadingData.bsdf->isEmissive())
@@ -124,8 +187,9 @@ public:
 
 			//------Direct Lighting------
 			Lo = Lo + pathThroughput * computeDirect(shadingData, sampler);
+			
 			//Max Depth
-			if (depth > MAX_DEPTH)
+			if (depth >= MAX_DEPTH)
 			{
 				return Lo;
 			}
@@ -147,15 +211,15 @@ public:
 			Vec3 wi = shadingData.bsdf->sample(shadingData, sampler, bsdf, pdf);
 
 			float cosTheta = Dot(wi, shadingData.sNormal);
-			if (pdf > 0.0f && cosTheta > 0.0f) {
+			if (pdf > 1e-12f && cosTheta > 0.0f) {
 				pathThroughput = pathThroughput * bsdf * cosTheta / pdf;
 				Ray nextRay;
 				nextRay.init(shadingData.x + (wi * EPSILON), wi);
-				return (Lo + pathTrace(nextRay, pathThroughput, depth + 1, sampler, shadingData.bsdf->isPureSpecular()));
+				return Lo + pathTrace(nextRay, pathThroughput, depth + 1, sampler);
 			}
 			return Lo;
 		}
-		return scene->background->evaluate(r.dir);
+		return pathThroughput * scene->background->evaluate(r.dir);
 	}
 	Colour direct(Ray& r, Sampler* sampler)
 	{
@@ -212,7 +276,7 @@ public:
 				//Colour col = albedo(ray);
 
 				Colour pathThroughput = Colour(1.0f, 1.0f, 1.0f);
-				Colour col = pathTrace(ray, pathThroughput, 0, &samplers[0],true);
+				Colour col = pathTrace(ray, pathThroughput, 0, &samplers[0]);
 				
 				film->splat(px, py, col);
 				unsigned char r = (unsigned char)(col.r * 255);

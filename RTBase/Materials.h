@@ -59,7 +59,7 @@ public:
 		return 1.0f;
 	}
 };
-#define EMISSIVE_LUMINANCE_THRESHOLD 1.0f
+#define EMISSIVE_LUMINANCE_THRESHOLD 0.5f
 
 class BSDF
 {

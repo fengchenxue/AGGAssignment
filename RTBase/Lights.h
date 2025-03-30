@@ -132,11 +132,11 @@ public:
 class Light
 {
 public:
-	virtual Vec3 sample(const ShadingData& shadingData, Sampler* sampler, Colour& emittedColour, float& pdf) = 0;
+	virtual Vec3 sample(Sampler* sampler, Colour& emittedColour, float& pdf, const Vec3& startPos = Vec3()) = 0;
 	virtual Colour evaluate(const Vec3& wi) = 0;
-	virtual float PDF(const ShadingData& shadingData, const Vec3& wi) = 0;
+	virtual float PDF(const Vec3& wi, const Vec3& startPos = Vec3(), const Vec3& TargetPos = Vec3()) = 0;
 	virtual bool isArea() = 0;
-	virtual Vec3 normal(const ShadingData& shadingData, const Vec3& wi) = 0;
+	virtual Vec3 normal(const Vec3& wi) = 0;
 	virtual float totalIntegratedPower() = 0;
 	virtual Vec3 samplePositionFromLight(Sampler* sampler, float& pdf) = 0;
 	virtual Vec3 sampleDirectionFromLight(Sampler* sampler, float& pdf) = 0;
@@ -147,10 +147,17 @@ class AreaLight : public Light
 public:
 	Triangle* triangle = NULL;
 	Colour emission;
-	Vec3 sample(const ShadingData& shadingData, Sampler* sampler, Colour& emittedColour, float& pdf)
+	Vec3 sample(Sampler* sampler, Colour& emittedColour, float& pdf, const Vec3& startPos = Vec3())
 	{
 		emittedColour = emission;
-		return triangle->sample(sampler, pdf);
+		Vec3 pos= triangle->sample(sampler, pdf);
+
+		float l2 = (startPos - pos).lengthSq();
+		Vec3 wi = (startPos - pos).normalize();
+		float cosTheta = std::max(Dot(wi, triangle->gNormal()), 0.0f);
+		pdf = l2 / (triangle->area * cosTheta);
+
+		return pos;
 	}
 	Colour evaluate(const Vec3& wi)
 	{
@@ -160,15 +167,18 @@ public:
 		}
 		return Colour(0.0f, 0.0f, 0.0f);
 	}
-	float PDF(const ShadingData& shadingData, const Vec3& wi)
+	float PDF(const Vec3& wi, const Vec3& startPos = Vec3(), const Vec3& TargetPos = Vec3())
 	{
-		return 1.0f / triangle->area;
+		float l2 = (TargetPos - startPos).lengthSq();
+		float cosTheta = std::max(Dot(wi, triangle->gNormal()), 0.0f);
+		if (cosTheta < EPSILON) return 0.0f;
+		return l2 / (triangle->area * cosTheta);
 	}
 	bool isArea()
 	{
 		return true;
 	}
-	Vec3 normal(const ShadingData& shadingData, const Vec3& wi)
+	Vec3 normal(const Vec3& wi)
 	{
 		return triangle->gNormal();
 	}
@@ -183,11 +193,6 @@ public:
 	Vec3 sampleDirectionFromLight(Sampler* sampler, float& pdf)
 	{
 		// Add code to sample a direction from the light
-		/*Vec3 wi = Vec3(0, 0, 1);
-		pdf = 1.0f;
-		Frame frame;
-		frame.fromVector(triangle->gNormal());
-		return frame.toWorld(wi);*/
 		Vec3 wi = SamplingDistributions::cosineSampleHemisphere(sampler->next(), sampler->next());
 		pdf = SamplingDistributions::cosineHemispherePDF(wi);
 		Frame frame;
@@ -204,7 +209,7 @@ public:
 	{
 		emission = _emission;
 	}
-	Vec3 sample(const ShadingData& shadingData, Sampler* sampler, Colour& reflectedColour, float& pdf)
+	Vec3 sample(Sampler* sampler, Colour& reflectedColour, float& pdf, const Vec3& startPos = Vec3())
 	{
 		Vec3 wi = SamplingDistributions::uniformSampleSphere(sampler->next(), sampler->next());
 		pdf = SamplingDistributions::uniformSpherePDF(wi);
@@ -215,7 +220,7 @@ public:
 	{
 		return emission;
 	}
-	float PDF(const ShadingData& shadingData, const Vec3& wi)
+	float PDF(const Vec3& wi, const Vec3& startPos = Vec3(), const Vec3& TargetPos = Vec3())
 	{
 		return SamplingDistributions::uniformSpherePDF(wi);
 	}
@@ -223,7 +228,7 @@ public:
 	{
 		return false;
 	}
-	Vec3 normal(const ShadingData& shadingData, const Vec3& wi)
+	Vec3 normal(const Vec3& wi)
 	{
 		return -wi;
 	}
@@ -262,7 +267,7 @@ public:
 		delete distribution;
 	}
 
-	Vec3 sample(const ShadingData& shadingData, Sampler* sampler, Colour& reflectedColour, float& pdf)
+	Vec3 sample(Sampler* sampler, Colour& reflectedColour, float& pdf, const Vec3& startPos = Vec3())
 	{
 		// Assignment: Update this code to importance sampling lighting based on luminance of each pixel
 		float mapPDF;
@@ -276,8 +281,8 @@ public:
 		Vec3 wi = Vec3(cosf(phi) * sinTheta, cosf(theta), sinf(phi) * sinTheta);
 		
 		//mapPDF is PDF_u * PDF_v,that means mapPDF=dP/(dv*du). 
-		//Now we need to get dP/dw. dw=2*pi*sin(theta)*du*dv
-		// dP/dw= dP/(dv*du) /(2*pi*sin(theta)). So the final PDF is density function of a solid angle.
+		//Now we need to get dP/dw. dw=2*pi*pi*sin(theta)*du*dv
+		// dP/dw= dP/(dv*du) /(2*pi*pi*sin(theta)). So the final PDF is density function of a solid angle.
 		pdf = (sinTheta <= EPSILON) ? 0.0f : mapPDF / (2.0f * M_PI * M_PI * sinTheta);
 		reflectedColour = evaluate(wi);
 
@@ -297,7 +302,7 @@ public:
 		float v = acosf(wi.y) / M_PI;
 		return env->sample(u, v);
 	}
-	float PDF(const ShadingData& shadingData, const Vec3& wi)
+	float PDF(const Vec3& wi, const Vec3& startPos = Vec3(), const Vec3& TargetPos = Vec3())
 	{
 		// Assignment: Update this code to return the correct PDF of luminance weighted importance sampling
 		//return SamplingDistributions::uniformSpherePDF(wi);
@@ -316,7 +321,7 @@ public:
 	{
 		return false;
 	}
-	Vec3 normal(const ShadingData& shadingData, const Vec3& wi)
+	Vec3 normal(const Vec3& wi)
 	{
 		return -wi;
 	}
@@ -350,6 +355,6 @@ public:
 		pdf = SamplingDistributions::uniformSpherePDF(wi);
 		return wi;*/
 		Colour emittedColour;
-		return sample(ShadingData(), sampler, emittedColour, pdf);
+		return sample(sampler, emittedColour, pdf);
 	}
 };
