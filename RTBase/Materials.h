@@ -39,10 +39,26 @@ public:
 class ShadingHelper
 {
 public:
-	static float fresnelDielectric(float cosTheta, float iorInt, float iorExt)
+	static float fresnelDielectric(float cosTheta, float iorI, float iorT)
 	{
 		// Add code here
-		return 1.0f;
+		cosTheta = std::clamp(cosTheta, -1.0f, 1.0f);
+		bool entering = cosTheta > 0.0f;
+		if (!entering) {
+			std::swap(iorI, iorT);
+			cosTheta = std::abs(cosTheta);
+		}
+
+		float sinThetaI = std::sqrt(std::max(0.0f, 1.0f - cosTheta * cosTheta));
+		float sinThetaT = (iorI / iorT) * sinThetaI;
+
+		if (sinThetaT >= 1.0f) return 1.0f;
+
+		float cosThetaT = std::sqrt(std::max(0.0f, 1.0f - sinThetaT * sinThetaT));
+		float rParallel = (iorT * cosTheta - iorI * cosThetaT) / (iorT * cosTheta + iorI * cosThetaT);
+		float rPerpendicular = (iorI * cosTheta - iorT * cosThetaT) / (iorI * cosTheta + iorT * cosThetaT);
+		return 0.5f * (rParallel * rParallel + rPerpendicular * rPerpendicular);
+
 	}
 	static Colour fresnelConductor(float cosTheta, Colour eta, Colour k)
 	{
@@ -343,22 +359,85 @@ public:
 	Vec3 sample(const ShadingData& shadingData, Sampler* sampler, Colour& reflectedColour, float& pdf)
 	{
 		// Replace this with Glass sampling code
-		Vec3 wi = SamplingDistributions::cosineSampleHemisphere(sampler->next(), sampler->next());
-		pdf = wi.z / M_PI;
-		reflectedColour = albedo->sample(shadingData.tu, shadingData.tv) / M_PI;
-		wi = shadingData.frame.toWorld(wi);
+
+		Vec3 wolocal = shadingData.frame.toLocal(shadingData.wo).normalize();
+		Vec3 normal(0, 0, 1);
+		float exaI = extIOR, exaE = intIOR;
+		//float exaI = intIOR, exaE = extIOR;
+		bool entering = wolocal.z < 0.0f;
+
+		//if entering,  Wo enters the material. if not, Wo leaves the material
+		if (!entering) { 
+			std::swap(exaI, exaE);
+			normal = -normal;
+			
+		}
+
+		float eta = exaI / exaE;
+		float cosThetaO = std::abs(wolocal.z);
+
+		// Compute Fresnel term
+		float F = ShadingHelper::fresnelDielectric(cosThetaO, exaI, exaE);
+
+		// Handle total internal reflection
+		float sin2ThetaI = 1.0f - cosThetaO * cosThetaO;
+		float sin2ThetaT = eta * eta * sin2ThetaI;
+		if (sin2ThetaT >= 1.0f) {
+			F = 1.0f;
+		}
+
+		Vec3 wi;
+		if (F >= 1.0f) { // Total reflection
+			// Reflect the outgoing direction
+			Vec3 wiLocal = wolocal - normal*2.0f * wolocal.z ;
+			wi = shadingData.frame.toWorld(wiLocal);
+			reflectedColour = albedo->sample(shadingData.tu, shadingData.tv) * F;
+			pdf = 1.0f;
+		}
+		else {
+			float rand = sampler->next();
+			if (rand < F) { // Reflect
+				Vec3 wiLocal = wolocal - normal * 2.0f * wolocal.z ;
+				wi = shadingData.frame.toWorld(wiLocal);
+				reflectedColour = albedo->sample(shadingData.tu, shadingData.tv) * F;
+				pdf = F;
+			}
+			else { // Refract
+				// Compute refraction direction
+				Vec3 incidentDir = -wolocal;
+				float cosThetaI = Dot(incidentDir, normal);
+				float k = 1.0f - eta * eta * (1.0f - cosThetaI * cosThetaI);
+				if (k < 0.0f) { // Total reflection (shouldn't happen here)
+					Vec3 wiLocal = wolocal - normal*2.0f * wolocal.z ;
+					wi = shadingData.frame.toWorld(wiLocal);
+					reflectedColour = albedo->sample(shadingData.tu, shadingData.tv) * F;
+					pdf = F;
+				}
+				else {
+					float cosThetaT = std::sqrt(k);
+					Vec3 wiLocal = incidentDir *eta + normal*(eta * cosThetaI - cosThetaT) ;
+					wiLocal = wiLocal.normalize();
+					wi = shadingData.frame.toWorld(wiLocal);
+					// Account for solid angle compression
+					reflectedColour = albedo->sample(shadingData.tu, shadingData.tv) * (1 - F) * (1.0f/(eta * eta));
+					pdf = (1 - F) * (eta * eta) * abs(Dot(wiLocal, normal)) / abs(Dot(wolocal, normal));
+				}
+			}
+		}
 		return wi;
-	}
+	}	
 	Colour evaluate(const ShadingData& shadingData, const Vec3& wi)
 	{
 		// Replace this with Glass evaluation code
-		return albedo->sample(shadingData.tu, shadingData.tv) / M_PI;
+		//return albedo->sample(shadingData.tu, shadingData.tv) / M_PI;
+		return Colour(0.0f, 0.0f, 0.0f);
 	}
 	float PDF(const ShadingData& shadingData, const Vec3& wi)
 	{
 		// Replace this with GlassPDF
-		Vec3 wiLocal = shadingData.frame.toLocal(wi);
-		return SamplingDistributions::cosineHemispherePDF(wiLocal);
+		/*Vec3 wiLocal = shadingData.frame.toLocal(wi);
+		return SamplingDistributions::cosineHemispherePDF(wiLocal);*/
+		return 0.0f;
 	}
 	bool isPureSpecular()
 	{
@@ -397,6 +476,12 @@ public:
 		reflectedColour = albedo->sample(shadingData.tu, shadingData.tv) / M_PI;
 		wi = shadingData.frame.toWorld(wi);
 		return wi;
+		//Vec3 wolocal = shadingData.frame.toLocal(shadingData.wo).normalize();
+		//float exaI = intIOR, exaE = extIOR;
+		//bool entering = wolocal.z > 0.0f;
+		////if entering, light enters the material. if not, light leaves the material
+		//if (!entering) std::swap(exaI, exaE);
+
 	}
 	Colour evaluate(const ShadingData& shadingData, const Vec3& wi)
 	{
