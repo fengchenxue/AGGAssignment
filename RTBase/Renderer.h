@@ -10,8 +10,10 @@
 #include "GamesEngineeringBase.h"
 #include <thread>
 #include <functional>
-
+#include <mutex>
+#include <queue>
 #define MAX_DEPTH 5
+#define TILE_SIZE 16
 inline float MISWeight(float pdf1, float pdf2)
 {
 	float a2 = pdf1 * pdf1;
@@ -28,6 +30,11 @@ public:
 	MTRandom *samplers;
 	std::thread **threads;
 	int numProcs;
+
+	std::mutex tileQueueMutex;
+	std::queue<std::pair<int, int>> tileQueue;
+	bool stopThreads = false;
+
 	void init(Scene* _scene, GamesEngineeringBase::Window* _canvas)
 	{
 		scene = _scene;
@@ -44,6 +51,50 @@ public:
 	void clear()
 	{
 		film->clear();
+	}
+
+	void generateTiles() {
+		while (!tileQueue.empty()) {
+			tileQueue.pop();
+		}
+		for (int y = 0; y < film->height; y += TILE_SIZE) {
+			for (int x = 0; x < film->width; x += TILE_SIZE) {
+				tileQueue.push(std::make_pair(x, y));
+			}
+		}
+	}
+	void renderTile(int threadID) {
+		while (!stopThreads) {
+			std::pair<int, int> tile;
+			{
+				std::lock_guard<std::mutex> lock(tileQueueMutex);
+				if (tileQueue.empty()) return;
+				tile = std::move(tileQueue.front());
+				tileQueue.pop();
+			}
+
+			int startX = tile.first;
+			int startY = tile.second;
+
+			for (int y = startY; y < startY+TILE_SIZE && y < film->height; y++) {
+				for (int x = startX; x < startX + TILE_SIZE && x < film->width; x++ ) {
+					float px = x + samplers[threadID].next();
+					float py = y + samplers[threadID].next();
+					
+					Ray ray = scene->camera.generateRay(px, py);
+
+					Colour pathThroughput = Colour(1.0f, 1.0f, 1.0f);
+					Colour col = pathTrace(ray, pathThroughput, 0, &samplers[0]);
+
+					film->splat(px, py, col);
+					unsigned char r = (unsigned char)(col.r * 255);
+					unsigned char g = (unsigned char)(col.g * 255);
+					unsigned char b = (unsigned char)(col.b * 255);
+					film->tonemap(x, y, r, g, b);
+					canvas->draw(x, y, r, g, b);
+				}
+			}
+		}
 	}
 	Colour computeDirect(ShadingData shadingData, Sampler* sampler)
 	{
@@ -264,28 +315,36 @@ public:
 	{
 		film->incrementSPP();
 		//std::cout << film->SPP << std::endl;
-		for (unsigned int y = 0; y < film->height; y++)
-		{
-			for (unsigned int x = 0; x < film->width; x++)
-			{
-				//-----------need correct sampler index----------
-				float px = x + samplers[0].next();
-				float py = y + samplers[0].next();	
-				Ray ray = scene->camera.generateRay(px, py);
-				//Colour col = viewNormals(ray);
-				//Colour col = albedo(ray);
-
-				Colour pathThroughput = Colour(1.0f, 1.0f, 1.0f);
-				Colour col = pathTrace(ray, pathThroughput, 0, &samplers[0]);
-				
-				film->splat(px, py, col);
-				unsigned char r = (unsigned char)(col.r * 255);
-				unsigned char g = (unsigned char)(col.g * 255);
-				unsigned char b = (unsigned char)(col.b * 255);
-				film->tonemap(x, y, r, g, b);
-				canvas->draw(x, y, r, g, b);
-			}
+		generateTiles();
+		for (int i = 0; i < numProcs; i++) {
+			threads[i] = new std::thread(&RayTracer::renderTile, this, i);
 		}
+		for (int i = 0; i < numProcs; i++) {
+			threads[i]->join();
+			delete threads[i];
+		}
+
+		//for (unsigned int y = 0; y < film->height; y++)
+		//{
+		//	for (unsigned int x = 0; x < film->width; x++)
+		//	{
+		//		float px = x + samplers[0].next();
+		//		float py = y + samplers[0].next();	
+		//		Ray ray = scene->camera.generateRay(px, py);
+		//		//Colour col = viewNormals(ray);
+		//		//Colour col = albedo(ray);
+
+		//		Colour pathThroughput = Colour(1.0f, 1.0f, 1.0f);
+		//		Colour col = pathTrace(ray, pathThroughput, 0, &samplers[0]);
+		//		
+		//		film->splat(px, py, col);
+		//		unsigned char r = (unsigned char)(col.r * 255);
+		//		unsigned char g = (unsigned char)(col.g * 255);
+		//		unsigned char b = (unsigned char)(col.b * 255);
+		//		film->tonemap(x, y, r, g, b);
+		//		canvas->draw(x, y, r, g, b);
+		//	}
+		//}
 	}
 	int getSPP()
 	{
@@ -299,4 +358,5 @@ public:
 	{
 		stbi_write_png(filename.c_str(), canvas->getWidth(), canvas->getHeight(), 3, canvas->getBackBuffer(), canvas->getWidth() * 3);
 	}
+
 };
