@@ -214,6 +214,9 @@ class Film
 {
 public:
 	Colour* film;
+	unsigned char* lastFilmR;
+	unsigned char* lastFilmG;
+	unsigned char* lastFilmB;
 	unsigned int width;
 	unsigned int height;
 	int SPP;
@@ -272,6 +275,11 @@ public:
 		r = (unsigned char)(color.r * 255);
 		g = (unsigned char)(color.g * 255);
 		b = (unsigned char)(color.b * 255);
+		
+		lastFilmR[y * width + x] = r;
+		lastFilmG[y * width + x] = g;
+		lastFilmB[y * width + x] = b;
+		
 	}
 	// Do not change any code below this line
 	void init(int _width, int _height, ImageFilter* _filter)
@@ -281,6 +289,9 @@ public:
 		film = new Colour[width * height];
 		clear();
 		filter = _filter;
+		lastFilmR = new unsigned char[width * height];
+		lastFilmG = new unsigned char[width * height];
+		lastFilmB = new unsigned char[width * height];
 	}
 	void clear()
 	{
@@ -300,5 +311,11 @@ public:
 		}
 		stbi_write_hdr(filename.c_str(), width, height, 3, (float*)hdrpixels);
 		delete[] hdrpixels;
+	}
+	void getLastRGB(int x, int y, unsigned char& r, unsigned char& g, unsigned char& b)
+	{
+		r = lastFilmR[y * width + x];
+		g = lastFilmG[y * width + x];
+		b = lastFilmB[y * width + x];
 	}
 };
