@@ -1,5 +1,5 @@
 #pragma once
-
+#include <OpenImageDenoise/oidn.hpp>
 #include "Core.h"
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
@@ -214,17 +214,26 @@ class Film
 {
 public:
 	Colour* film;
-	unsigned char* lastFilmR;
-	unsigned char* lastFilmG;
-	unsigned char* lastFilmB;
+	//unsigned char* lastFilmR;
+	//unsigned char* lastFilmG;
+	//unsigned char* lastFilmB;
 	unsigned int width;
 	unsigned int height;
 	int SPP;
+	std::vector<int> vecSPP;
 	ImageFilter* filter;
+
+	//denoise
+	//std::vector<float> inputbuffer;
+	//std::vector<float> outputBuffer;
+	oidn::DeviceRef device;
+	oidn::FilterRef denoiseFilter;
+	oidn::BufferRef	inputBuffer;
+	oidn::BufferRef	outputBuffer;
 	void splat(const float x, const float y, const Colour& L)
 	{
 		// Code to splat a smaple with colour L into the image plane using an ImageFilter
-
+		
 		int r = filter->size();
 		int x_start = std::max(0,static_cast<int>(floorf(x - r)));
 		int x_end = std::min(static_cast<int>(width-1),static_cast<int>(floorf(x + r)));
@@ -245,8 +254,10 @@ public:
 	void tonemap(int x, int y, unsigned char& r, unsigned char& g, unsigned char& b, float exposure = 1.0f)
 	{
 		// Return a tonemapped pixel at coordinates x, y
-		
-		Colour color = film[y * width + x] / (float)SPP;
+		float* output = (float*)outputBuffer.getData();
+		int index = y * width + x;
+		//Colour color(outputBuffer[index * 3], outputBuffer[index * 3 + 1], outputBuffer[index * 3 + 2]);
+		Colour color(output[index * 3], output[index * 3 + 1], output[index * 3 + 2]);
 		color = color * exposure;
 		
 		// ACES Filmic Approximation (Narkowicz 2015)
@@ -276,9 +287,9 @@ public:
 		g = (unsigned char)(color.g * 255);
 		b = (unsigned char)(color.b * 255);
 		
-		lastFilmR[y * width + x] = r;
-		lastFilmG[y * width + x] = g;
-		lastFilmB[y * width + x] = b;
+		//lastFilmR[y * width + x] = r;
+		//lastFilmG[y * width + x] = g;
+		//lastFilmB[y * width + x] = b;
 		
 	}
 	// Do not change any code below this line
@@ -289,9 +300,28 @@ public:
 		film = new Colour[width * height];
 		clear();
 		filter = _filter;
-		lastFilmR = new unsigned char[width * height];
+		vecSPP.resize(width * height,0);
+
+		/*lastFilmR = new unsigned char[width * height];
 		lastFilmG = new unsigned char[width * height];
-		lastFilmB = new unsigned char[width * height];
+		lastFilmB = new unsigned char[width * height];*/
+
+		//deniose
+		//inputBuffer.resize(width * height * 3);
+		//outputBuffer.resize(width * height * 3);
+		
+		//denoise
+		device = oidn::newDevice();
+		device.commit();
+
+		inputBuffer = device.newBuffer(width * height * 3 * sizeof(float));
+		outputBuffer = device.newBuffer(width * height * 3 * sizeof(float));
+
+		denoiseFilter = device.newFilter("RT");
+		denoiseFilter.set("hdr", true);
+		denoiseFilter.setImage("color", inputBuffer, oidn::Format::Float3, width, height);
+		denoiseFilter.setImage("output", outputBuffer, oidn::Format::Float3, width, height);
+		denoiseFilter.commit();
 	}
 	void clear()
 	{
@@ -307,15 +337,50 @@ public:
 		Colour* hdrpixels = new Colour[width * height];
 		for (unsigned int i = 0; i < (width * height); i++)
 		{
-			hdrpixels[i] = film[i] / (float)SPP;
+			hdrpixels[i] = film[i] / (float)vecSPP[i];
 		}
 		stbi_write_hdr(filename.c_str(), width, height, 3, (float*)hdrpixels);
 		delete[] hdrpixels;
 	}
-	void getLastRGB(int x, int y, unsigned char& r, unsigned char& g, unsigned char& b)
+	/*void drawInputBuffer(int x, int y, float r, float g, float b)
+	{
+		inputBuffer[(y * width + x) * 3] = r;
+		inputBuffer[(y * width + x) * 3 + 1] = g;
+		inputBuffer[(y * width + x) * 3 + 2] = b;
+	}*/
+	void denoise() {
+		
+		float* input = (float*)inputBuffer.getData();
+		float* output = (float*)outputBuffer.getData();
+		for (int y = 0; y < height; y++)
+		{
+			for (int x = 0; x < width; x++)
+			{
+				int sp = vecSPP[y * width + x];
+				int index = (y * width + x) * 3;
+
+				//std::cout << inputBuffer.getData() << std::endl;
+				if (sp > 0) {
+					input[index] = film[y * width + x].r / (float)sp;
+					input[index + 1] = film[y * width + x].g / (float)sp;
+					input[index + 2] = film[y * width + x].b / (float)sp;
+				}
+				else {
+					input[index] = 0.0f;
+					input[index + 1] = 0.0f;
+					input[index + 2] = 0.0f;
+				}
+				/*inputBuffer[(y * width + x) * 3] = film[y * width + x].r / (float)vecSPP[y * width + x];
+				inputBuffer[(y * width + x) * 3 + 1] = film[y * width + x].g / (float)vecSPP[y * width + x];
+				inputBuffer[(y * width + x) * 3 + 2] = film[y * width + x].b / (float)vecSPP[y * width + x];*/
+			}
+		}
+		denoiseFilter.execute();
+	}
+	/*void getLastRGB(int x, int y, unsigned char& r, unsigned char& g, unsigned char& b)
 	{
 		r = lastFilmR[y * width + x];
 		g = lastFilmG[y * width + x];
 		b = lastFilmB[y * width + x];
-	}
+	}*/
 };

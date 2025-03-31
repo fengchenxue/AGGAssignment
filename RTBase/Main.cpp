@@ -14,9 +14,17 @@ void runTests()
 
 int main(int argc, char *argv[])
 {
-	// Add call to tests if required
-	// runTests()
-	
+	auto device = oidn::newDevice();
+	device.setErrorFunction([](void*, oidn::Error error, const char* message) {
+		std::cerr << "OIDN Error: " << message << std::endl;
+		});
+	device.commit(); 
+
+	const char* errorMessage;
+	if (device.getError(errorMessage) != oidn::Error::None)
+		std::cerr << "OIDN Error: " << errorMessage << std::endl;
+
+
 	// Initialize default parameters
 	//std::string sceneName = "cornell-box";
 	std::string sceneName = "MaterialsScene";
@@ -112,6 +120,11 @@ int main(int argc, char *argv[])
 		timer.reset();
 		rt.render();
 		float t = timer.dt();
+
+
+
+
+
 		// Write
 		std::cout << t << std::endl;
 		if (canvas.keyPressed('P'))

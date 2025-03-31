@@ -48,6 +48,15 @@
     <ClInclude Include="SceneLoader.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="OpenImageDenoise\config.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="OpenImageDenoise\oidn.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="OpenImageDenoise\oidn.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Main.cpp">
