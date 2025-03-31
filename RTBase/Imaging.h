@@ -254,12 +254,16 @@ public:
 	void tonemap(int x, int y, unsigned char& r, unsigned char& g, unsigned char& b, float exposure = 1.0f)
 	{
 		// Return a tonemapped pixel at coordinates x, y
-		float* output = (float*)outputBuffer.getData();
-		int index = y * width + x;
+		//float* output = (float*)outputBuffer.getData();
+		//int index = y * width + x;
 		//Colour color(outputBuffer[index * 3], outputBuffer[index * 3 + 1], outputBuffer[index * 3 + 2]);
-		Colour color(output[index * 3], output[index * 3 + 1], output[index * 3 + 2]);
-		color = color * exposure;
+		//Colour color(output[index * 3], output[index * 3 + 1], output[index * 3 + 2]);
+		//color = color * exposure;
 		
+		Colour color = film[y * width + x] / (float)vecSPP[y * width + x];
+		color = color * exposure;
+
+
 		// ACES Filmic Approximation (Narkowicz 2015)
 		const float A = 2.51f;
 		const float B = 0.03f;

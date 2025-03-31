@@ -15,7 +15,7 @@ void runTests()
 
 int main(int argc, char *argv[])
 {
-	auto device = oidn::newDevice();
+	/*auto device = oidn::newDevice();
 	device.setErrorFunction([](void*, oidn::Error error, const char* message) {
 		std::cerr << "OIDN Error: " << message << std::endl;
 		});
@@ -23,7 +23,7 @@ int main(int argc, char *argv[])
 
 	const char* errorMessage;
 	if (device.getError(errorMessage) != oidn::Error::None)
-		std::cerr << "OIDN Error: " << errorMessage << std::endl;
+		std::cerr << "OIDN Error: " << errorMessage << std::endl;*/
 
 
 	// Initialize default parameters
@@ -32,6 +32,8 @@ int main(int argc, char *argv[])
 	//std::string sceneName = "bathroom";
 	std::string filename = "GI.hdr";
 	unsigned int SPP = 8192;
+
+	bool PPMMode = false;
 
 	if (argc > 1)
 	{
@@ -117,14 +119,15 @@ int main(int argc, char *argv[])
 			viewcamera.flyDown();
 			rt.clear();
 		}
+		
+		if (PPMMode) rt.PPMinit();
 		// Time how long a render call takes
 		timer.reset();
-		rt.render();
+		
+		if (PPMMode) rt.renderPPM();
+		else rt.render();
+
 		float t = timer.dt();
-
-
-
-
 
 		// Write
 		std::cout << t << std::endl;

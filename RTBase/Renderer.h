@@ -15,10 +15,19 @@
 
 #define MAX_DEPTH 5
 #define TILE_SIZE 16
+
 //this value is used to for adaptive sampling,
 //if the spp of a tile is more than this value, it will be considered whether converged
 #define MIN_TILE_SPP 8
 #define ADAPTIVE_SAMPLING_THRESHOLD 0.1f
+
+//these values are used for PPM
+#define PPM_SPP 32
+#define PPM_maxIterations 100
+#define PPM_photonsPerIteration 100000
+#define PPM_initialRadius 1.0f
+#define PPM_alpha 0.7f
+
 inline float MISWeight(float pdf1, float pdf2)
 {
 	float a2 = pdf1 * pdf1;
@@ -36,6 +45,15 @@ struct TileInfo
 	bool stop = false;
 };
 
+struct HitPoint{
+	Vec3 position;
+	Vec3 normal;
+	Colour flux = Colour(0.0f, 0.0f, 0.0f);
+	float radius = PPM_initialRadius;
+	int photonCount = 0;
+	int pixelX, pixelY;
+};
+
 class RayTracer
 {
 public:
@@ -45,11 +63,13 @@ public:
 	MTRandom* samplers;
 	std::thread** threads;
 	int numProcs;
-
+	//multithreading
 	std::mutex tileQueueMutex;
 	std::queue<TileInfo*> tileQueue;
 	bool stopThreads = false;
 	std::vector<TileInfo> tiles;
+	//PPM
+	std::vector<HitPoint> hitPoints;
 
 	void init(Scene* _scene, GamesEngineeringBase::Window* _canvas)
 	{
@@ -87,7 +107,7 @@ public:
 			if (tile.stop) continue;
 			TileInfo* newTile = &tile;
 			tileQueue.push(newTile);
-			
+
 		}
 	}
 	void renderTile(int threadID) {
@@ -401,7 +421,7 @@ public:
 			delete threads[i];
 		}
 
-		film->denoise();
+		//film->denoise();
 		for (int y = 0; y < film->height; y++) {
 			for (int x = 0; x < film->width; x++) {
 				unsigned char r;
@@ -424,5 +444,47 @@ public:
 	{
 		stbi_write_png(filename.c_str(), canvas->getWidth(), canvas->getHeight(), 3, canvas->getBackBuffer(), canvas->getWidth() * 3);
 	}
+	//--------PPM--------
+	void renderPPM() {
 
+		//photon pass
+		for (int it = 0; it < PPM_maxIterations; it++) {
+			for (int i = 0; i < PPM_photonsPerIteration; i++) {
+				float pmf, pdfPos, pdfDir;
+				Light* light = scene->sampleLight(&samplers[0], pmf);
+				Vec3 lightPos = light->samplePositionFromLight(&samplers[0], pdfPos);
+				Vec3 lightDir = light->sampleDirectionFromLight(&samplers[0], pdfDir);
+				Colour flux = light->evaluate(lightDir) * light->totalIntegratedPower() / (pmf * pdfPos * pdfDir);
+
+				Ray photon(lightPos + lightDir * EPSILON, lightDir);
+			}
+		}
+	}
+	//generate hitpoints
+	void PPMinit() {
+		for (int y = 0; y < film->height; y++) {
+			for (int x = 0; x < film->width; x++) {
+				for (int i = 0; i < PPM_SPP; i++) {
+
+					float px = x + samplers[0].next();
+					float py = y + samplers[0].next();
+					Ray ray = scene->camera.generateRay(px, py);
+
+					IntersectionData intersection = scene->traverse(ray);
+					ShadingData shadingData = scene->calculateShadingData(intersection, ray);
+
+					if (shadingData.t < FLT_MAX) {
+						Triangle& triangle = scene->triangles[intersection.ID];
+
+						HitPoint hp;
+						hp.position = shadingData.x;
+						hp.normal = shadingData.sNormal;
+						hp.pixelX = x;
+						hp.pixelY = y;
+						hitPoints.push_back(hp);
+					}
+				}
+			}
+		}
+	}
 };
