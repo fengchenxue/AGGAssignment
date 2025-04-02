@@ -99,9 +99,10 @@ public:
 		if (std::abs(invDet) < EPSILON) return false;
 		invDet = 1.0f / invDet;
 		
-		t = s2.dot(e2) * invDet;
 		u = s1.dot(s) * invDet;
 		v = s2.dot(r.dir) * invDet;
+		t = s2.dot(e2) * invDet;
+
 		if (t < 0.0f|| u < 0.0f || v < 0.0f || u + v > 1.0f) return false;
 
 		return true;
@@ -368,9 +369,10 @@ public:
 					if (t < intersection.t) {
 						intersection.t = t;
 						intersection.ID = i;
-						intersection.alpha = u;
-						intersection.beta = v;
-						intersection.gamma = 1.0f - (u + v);
+
+						intersection.alpha = 1.0f - (u + v);
+						intersection.beta = u;
+						intersection.gamma = v;
 					}
 				}
 			}

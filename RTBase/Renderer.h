@@ -19,7 +19,7 @@
 //this value is used to for adaptive sampling,
 //if the spp of a tile is more than this value, it will be considered whether converged
 #define MIN_TILE_SPP 8
-#define ADAPTIVE_SAMPLING_THRESHOLD 0.1f
+#define ADAPTIVE_SAMPLING_THRESHOLD 0.001f
 
 //these values are used for PPM
 #define PPM_SPP 32
@@ -148,8 +148,8 @@ public:
 					Ray ray = scene->camera.generateRay(px, py);
 
 					Colour pathThroughput = Colour(1.0f, 1.0f, 1.0f);
-					Colour col = pathTrace(ray, pathThroughput, 0, &samplers[threadID]);
-
+					Colour col = pathTraceMIS(ray, pathThroughput, 0, &samplers[threadID]);
+					//Colour col =pathTrace(ray, pathThroughput, 0, &samplers[threadID]);
 					film->vecSPP[y * film->width + x]++;
 					film->splat(px, py, col);
 
@@ -193,7 +193,7 @@ public:
 
 		}
 	}
-	Colour computeDirect(ShadingData shadingData, Sampler* sampler)
+	Colour computeDirectMIS(ShadingData shadingData, Sampler* sampler)
 	{
 		Colour L_light(0.0f, 0.0f, 0.0f);
 		Colour L_bsdf(0.0f, 0.0f, 0.0f);
@@ -319,7 +319,7 @@ public:
 		}
 		return  L_light + L_bsdf;
 	}
-	Colour pathTrace(Ray& r, Colour pathThroughput, int depth, Sampler* sampler)
+	Colour pathTraceMIS(Ray& r, Colour pathThroughput, int depth, Sampler* sampler)
 	{
 		// Add pathtracer code here
 		IntersectionData intersection = scene->traverse(r);
@@ -334,7 +334,7 @@ public:
 			}
 
 			//------Direct Lighting------
-			Lo = Lo + pathThroughput * computeDirect(shadingData, sampler);
+			Lo = Lo + pathThroughput * computeDirectMIS(shadingData, sampler);
 
 			//Max Depth
 			if (depth >= MAX_DEPTH)
@@ -363,7 +363,7 @@ public:
 				pathThroughput = pathThroughput * bsdf * cosTheta / pdf;
 				Ray nextRay;
 				nextRay.init(shadingData.x + (wi * EPSILON), wi);
-				return Lo + pathTrace(nextRay, pathThroughput, depth + 1, sampler);
+				return Lo + pathTraceMIS(nextRay, pathThroughput, depth + 1, sampler);
 			}
 			return Lo;
 		}
@@ -380,7 +380,7 @@ public:
 			{
 				return shadingData.bsdf->emit(shadingData, shadingData.wo);
 			}
-			return computeDirect(shadingData, sampler);
+			return computeDirectMIS(shadingData, sampler);
 		}
 		return Colour(0.0f, 0.0f, 0.0f);
 	}
@@ -444,6 +444,123 @@ public:
 	{
 		stbi_write_png(filename.c_str(), canvas->getWidth(), canvas->getHeight(), 3, canvas->getBackBuffer(), canvas->getWidth() * 3);
 	}
+
+	Colour computeDirect(ShadingData shadingData, Sampler* sampler)
+	{
+		// Is surface is specular we cannot computing direct lighting
+		if (shadingData.bsdf->isPureSpecular() == true)
+		{
+			return Colour(0.0f, 0.0f, 0.0f);
+		}
+		// Sample a light
+		float pmf;
+		Light* light = scene->sampleLight(sampler, pmf);
+		// Sample a point on the light
+		float pdf;
+		Colour emitted;
+		Vec3 p = light->sample(sampler, emitted, pdf);
+		if (light->isArea())
+		{
+			// Calculate GTerm
+			Vec3 wi = p - shadingData.x;
+			float l = wi.lengthSq();
+			wi = wi.normalize();
+			float GTerm = (max(Dot(wi, shadingData.sNormal), 0.0f) * max(-Dot(wi, light->normal(wi)), 0.0f)) / l;
+			if (GTerm > 0)
+			{
+				// Trace
+				if (scene->visible(shadingData.x, p))
+				{
+					if (pdf <= EPSILON) {
+						//std::cout << pdf << std::endl;
+						return Colour(0.0f, 0.0f, 0.0f);
+					}
+					// Shade
+					return shadingData.bsdf->evaluate(shadingData, wi) * emitted * GTerm / (pmf * pdf);
+				}
+			}
+		}
+		else
+		{
+			// Calculate GTerm
+			Vec3 wi = p;
+			float GTerm = max(Dot(wi, shadingData.sNormal), 0.0f);
+			if (GTerm > 0)
+			{
+				// Trace
+				if (scene->visible(shadingData.x, shadingData.x + (p * 10000.0f)))
+				{
+					if (pdf <= EPSILON) {
+						//std::cout << pdf << std::endl;
+						return Colour(0.0f, 0.0f, 0.0f);
+					}
+					// Shade
+					return shadingData.bsdf->evaluate(shadingData, wi) * emitted * GTerm / (pmf * pdf);
+				}
+			}
+		}
+		return Colour(0.0f, 0.0f, 0.0f);
+	}
+	Colour pathTrace(Ray& r, Colour pathThroughput, int depth, Sampler* sampler, bool canHitLight = true)
+	{
+		// Add pathtracer code here
+		IntersectionData intersection = scene->traverse(r);
+		ShadingData shadingData = scene->calculateShadingData(intersection, r);
+		if (shadingData.t < FLT_MAX)
+		{
+			//------Lights------
+			if (shadingData.bsdf->isLight())
+			{
+				if (canHitLight)
+				{
+					return pathThroughput * shadingData.bsdf->emit(shadingData, shadingData.wo);
+				}
+				else
+				{
+					return Colour(0.0f, 0.0f, 0.0f);
+				}
+			}
+			Colour Lo(0.0f, 0.0f, 0.0f);
+			//------Emissive Materials------
+			if (shadingData.bsdf->isEmissive())
+			{
+				Lo = Lo + pathThroughput * shadingData.bsdf->emit(shadingData, shadingData.wo);
+			}
+			//------Direct Lighting------
+			Lo = Lo + pathThroughput * computeDirect(shadingData, sampler);
+			//Max Depth
+			if (depth > MAX_DEPTH)
+			{
+				return Lo;
+			}
+			//Russian Roulette
+			float russianRouletteProbability = max(0.0f, min(pathThroughput.Lum(), 0.9f));
+			if (sampler->next() < russianRouletteProbability)
+			{
+				pathThroughput = pathThroughput / russianRouletteProbability;
+			}
+			else
+			{
+				return Lo;
+			}
+			//------Indirect Lighting------
+			//need to solve glass material
+			Colour bsdf;
+			float pdf;
+			Vec3 wi = shadingData.bsdf->sample(shadingData, sampler, bsdf, pdf);
+			float cosTheta = Dot(wi, shadingData.sNormal);
+			if (pdf > 0.0f && cosTheta > 0.0f) {
+				pathThroughput = pathThroughput * bsdf * cosTheta / pdf;
+				Ray nextRay;
+				nextRay.init(shadingData.x + (wi * EPSILON), wi);
+				return (Lo + pathTrace(nextRay, pathThroughput, depth + 1, sampler, shadingData.bsdf->isPureSpecular()));
+			}
+			return Lo;
+		}
+		return scene->background->evaluate(r.dir);
+	}
+
+
 	//--------PPM--------
 	void renderPPM() {
 

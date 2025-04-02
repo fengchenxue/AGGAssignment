@@ -24,18 +24,22 @@ public:
 		{
 			cdf[i+1] = cdf[i] + func[i];
 		}
-		area = cdf[cdf.size()-1];
+		area = cdf[func.size()];
 
 		//robustness measure
-		if (fabs(area)<EPSILON){
-			for (int i = 1; i <= func.size(); i++){
-				cdf[i] = (float)i / (float)func.size();
+		if (area<EPSILON){
+			float uniform = 1.0f / (float)func.size();
+			for (int i = 0; i < func.size(); i++) {
+				func[i] = uniform;
+			}
+			for (int i = 0; i < func.size(); i++){
+				cdf[i + 1] = (float)(1 + i) * uniform;
 			}
 			area = 1.0f;
 		}
 		else
 		{
-			for (int i = 0; i < cdf.size(); i++)
+			for (int i = 1; i < cdf.size(); i++)
 			{
 				cdf[i] = cdf[i] / area;
 			}
@@ -45,7 +49,7 @@ public:
 	int sample(float u, float &pdf)
 	{
 		auto in = std::lower_bound(cdf.begin(), cdf.end(), u);
-		int index = std::clamp((int)(in - cdf.begin() - 1), 0, (int)func.size()-1);
+		int index = std::clamp((int)(in - cdf.begin()) - 1, 0, (int)func.size()-1);
 		pdf = func[index] / area;
 		return index;
 	}
@@ -90,26 +94,32 @@ public:
 	}
 	//input: 2 random numbers
 	//output: the normalized position of the sample in the texture and PDF
-	void sampleContinuous(float u1, float u2, float& u, float& v, float& pdf) const {
+	void sampleContinuous(float u1, float u2, float u3, float u4, float& u, float& v, float& pdf) const {
 		float pdf1, pdf2;
 		int vIdx = pMarginal->sample(u2, pdf2);
 		int uIdx = pConditionalV[vIdx]->sample(u1, pdf1);
 
-		//normalize the position to [0,1]
-		u = (uIdx + 0.5f) / pConditionalV[vIdx]->func.size();
-		v = (vIdx + 0.5f) / pMarginal->func.size();
+		float width = pConditionalV[vIdx]->func.size();
+		float height = pMarginal->func.size();
 
-		pdf = pdf1 * pdf2;
+		//normalize the position to [0,1]
+		u = (uIdx + u3) / width;
+		v = (vIdx + u4) / height;
+		// Discrete PDF to continuous PDF
+		pdf = pdf1 * pdf2 * width * height;
 	}
 
 	float pdf(float u, float v) const {
-		int iu = std::clamp(int(u * pConditionalV[0]->func.size()), 0, int(pConditionalV[0]->func.size()-1));
-		int iv = std::clamp(int(v * pMarginal->func.size()), 0, int(pMarginal->func.size()-1));
+		int iv = std::clamp(int(v * pMarginal->func.size()), 0, int(pMarginal->func.size() - 1));
+		int iu = std::clamp(int(u * pConditionalV[iv]->func.size()), 0, int(pConditionalV[iv]->func.size()-1));
+		
 
 		float pdfU = pConditionalV[iv]->pdf(iu);
 		float pdfV = pMarginal->pdf(iv);
 
-		return pdfU * pdfV;
+		float width = pConditionalV[iv]->func.size();
+		float height = pMarginal->func.size();
+		return pdfU * pdfV * width * height;
 	}
 
 	~Distribution2D() {
@@ -272,7 +282,7 @@ public:
 		// Assignment: Update this code to importance sampling lighting based on luminance of each pixel
 		float mapPDF;
 		float u, v;
-		distribution->sampleContinuous(sampler->next(), sampler->next(), u, v, mapPDF);
+		distribution->sampleContinuous(sampler->next(), sampler->next(), sampler->next(), sampler->next(),u, v, mapPDF);
 
 		float theta = v * M_PI;
 		float phi = u * 2.0f * M_PI;
@@ -287,11 +297,6 @@ public:
 		reflectedColour = evaluate(wi);
 
 		return wi;
-
-		/*Vec3 wi = SamplingDistributions::uniformSampleSphere(sampler->next(), sampler->next());
-		pdf = SamplingDistributions::uniformSpherePDF(wi);
-		reflectedColour = evaluate(wi);
-		return wi;*/
 	}
 	//u islongitude, v is latitude. They are normalized to [0,1]
 	Colour evaluate(const Vec3& wi)

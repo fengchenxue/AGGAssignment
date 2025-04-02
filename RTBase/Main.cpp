@@ -1,6 +1,3 @@
-
-
-
 #include "GEMLoader.h"
 #include "Renderer.h"
 #include "SceneLoader.h"
@@ -8,21 +5,15 @@
 #include "GamesEngineeringBase.h"
 #include <unordered_map>
 
-
-void runTests()
-{
-	// Add test code here
-}
-
 int main(int argc, char *argv[])
 {
-
-
-
 	// Initialize default parameters
-	//std::string sceneName = "cornell-box";
-	std::string sceneName = "MaterialsScene";
-	//std::string sceneName = "bathroom";
+	std::string sceneName = "Scene/";
+	//sceneName+= "cornell-box";
+	sceneName+= "MaterialsScene";
+	//sceneName+= "bathroom";
+	//sceneName += "teapot-full";
+
 	std::string filename = "GI.hdr";
 	unsigned int SPP = 8192;
 
@@ -143,17 +134,3 @@ int main(int argc, char *argv[])
 	}
 	return 0;
 }
-
-//int main() {
-//
-//
-//    oidn::DeviceRef device = oidn::newDevice(OIDN_DEVICE_TYPE_CPU);
-//    device.setErrorFunction([](void*, oidn::Error error, const char* message) {
-//        std::cerr << "OIDN Error: " << message << std::endl;
-//        });
-//    device.commit();
-//
-//    const char* errorMessage;
-//    if (device.getError(errorMessage) != oidn::Error::None)
-//        std::cerr << "OIDN Error: " << errorMessage << std::endl;
-//}
