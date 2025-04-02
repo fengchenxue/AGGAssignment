@@ -5,6 +5,7 @@
 #include "Sampling.h"
 
 #pragma warning( disable : 4244)
+#pragma warning( disable : 4305) // Double to float
 
 class BSDF;
 
