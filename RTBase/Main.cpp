@@ -1,5 +1,6 @@
 
 
+
 #include "GEMLoader.h"
 #include "Renderer.h"
 #include "SceneLoader.h"
@@ -15,15 +16,7 @@ void runTests()
 
 int main(int argc, char *argv[])
 {
-	/*auto device = oidn::newDevice();
-	device.setErrorFunction([](void*, oidn::Error error, const char* message) {
-		std::cerr << "OIDN Error: " << message << std::endl;
-		});
-	device.commit(); 
 
-	const char* errorMessage;
-	if (device.getError(errorMessage) != oidn::Error::None)
-		std::cerr << "OIDN Error: " << errorMessage << std::endl;*/
 
 
 	// Initialize default parameters
@@ -150,3 +143,17 @@ int main(int argc, char *argv[])
 	}
 	return 0;
 }
+
+//int main() {
+//
+//
+//    oidn::DeviceRef device = oidn::newDevice(OIDN_DEVICE_TYPE_CPU);
+//    device.setErrorFunction([](void*, oidn::Error error, const char* message) {
+//        std::cerr << "OIDN Error: " << message << std::endl;
+//        });
+//    device.commit();
+//
+//    const char* errorMessage;
+//    if (device.getError(errorMessage) != oidn::Error::None)
+//        std::cerr << "OIDN Error: " << errorMessage << std::endl;
+//}

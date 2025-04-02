@@ -24,12 +24,12 @@ public:
 		{
 			cdf[i+1] = cdf[i] + func[i];
 		}
-		area = cdf[cdf.size()];
+		area = cdf[cdf.size()-1];
 
 		//robustness measure
 		if (fabs(area)<EPSILON){
-			for (int i = 1; i <= cdf.size(); i++){
-				cdf[i] = (float)i / (float)cdf.size();
+			for (int i = 1; i <= func.size(); i++){
+				cdf[i] = (float)i / (float)func.size();
 			}
 			area = 1.0f;
 		}

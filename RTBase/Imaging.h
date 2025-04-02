@@ -1,5 +1,7 @@
 #pragma once
-#include <OpenImageDenoise/oidn.hpp>
+#include"oidn.hpp"
+#pragma comment(lib, "OpenImageDenoise.lib")
+
 #include "Core.h"
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
@@ -306,16 +308,8 @@ public:
 		filter = _filter;
 		vecSPP.resize(width * height,0);
 
-		/*lastFilmR = new unsigned char[width * height];
-		lastFilmG = new unsigned char[width * height];
-		lastFilmB = new unsigned char[width * height];*/
-
-		//deniose
-		//inputBuffer.resize(width * height * 3);
-		//outputBuffer.resize(width * height * 3);
-		
 		//denoise
-		device = oidn::newDevice();
+		device = oidn::newDevice(OIDN_DEVICE_TYPE_CPU);
 		device.commit();
 
 		inputBuffer = device.newBuffer(width * height * 3 * sizeof(float));
