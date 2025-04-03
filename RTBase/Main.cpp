@@ -13,7 +13,6 @@ int main(int argc, char *argv[])
 	sceneName+= "MaterialsScene";
 	//sceneName+= "bathroom";
 	//sceneName += "teapot-full";
-
 	std::string filename = "GI.hdr";
 	unsigned int SPP = 8192;
 

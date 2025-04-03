@@ -171,7 +171,7 @@ public:
 	}
 	Colour evaluate(const Vec3& wi)
 	{
-		if (Dot(wi, triangle->gNormal()) < 0)
+		if (Dot(wi, triangle->gNormal()) > 0.0f)
 		{
 			return emission;
 		}
@@ -194,7 +194,7 @@ public:
 	}
 	float totalIntegratedPower()
 	{
-		return (triangle->area * emission.Lum());
+		return (triangle->area * emission.Lum()) * M_PI;
 	}
 	Vec3 samplePositionFromLight(Sampler* sampler, float& pdf)
 	{
@@ -287,12 +287,12 @@ public:
 		float theta = v * M_PI;
 		float phi = u * 2.0f * M_PI;
 
-		float sinTheta = sinf(theta);
+		float sinTheta = std::max(sinf(theta),EPSILON);
 		Vec3 wi = Vec3(cosf(phi) * sinTheta, cosf(theta), sinf(phi) * sinTheta);
 		
 		//mapPDF is PDF_u * PDF_v,that means mapPDF=dP/(dv*du). 
 		//Now we need to get dP/dw. dw=2*pi*pi*sin(theta)*du*dv
-		// dP/dw= dP/(dv*du) /(2*pi*pi*sin(theta)). So the final PDF is density function of a solid angle.
+		//dP/dw= dP/(dv*du) /(2*pi*pi*sin(theta)). So the final PDF is density function of a solid angle.
 		pdf = (sinTheta <= EPSILON) ? 0.0f : mapPDF / (2.0f * M_PI * M_PI * sinTheta);
 		reflectedColour = evaluate(wi);
 
@@ -330,19 +330,20 @@ public:
 	{
 		return -wi;
 	}
+	//power = 2*pi*pi/width/height*sum(Lum*sin(theta))
 	float totalIntegratedPower()
 	{
 		float total = 0;
 		for (int i = 0; i < env->height; i++)
 		{
-			float st = sinf(((float)i / (float)env->height) * M_PI);
+			float st = sinf(((float)i+0.5) * M_PI / (float)env->height);
 			for (int n = 0; n < env->width; n++)
 			{
 				total += (env->texels[(i * env->width) + n].Lum() * st);
 			}
 		}
 		total = total / (float)(env->width * env->height);
-		return total * 4.0f * M_PI;
+		return total * 2.0f * M_PI * M_PI;
 	}
 	Vec3 samplePositionFromLight(Sampler* sampler, float& pdf)
 	{
@@ -356,9 +357,7 @@ public:
 	Vec3 sampleDirectionFromLight(Sampler* sampler, float& pdf)
 	{
 		// Replace this tabulated sampling of environment maps
-		/*Vec3 wi = SamplingDistributions::uniformSampleSphere(sampler->next(), sampler->next());
-		pdf = SamplingDistributions::uniformSpherePDF(wi);
-		return wi;*/
+
 		Colour emittedColour;
 		return sample(sampler, emittedColour, pdf);
 	}

@@ -3,7 +3,7 @@
 #include<algorithm>
 #include "Core.h"
 #include "Sampling.h"
-#define EPSILON 0.001f
+#define EPSILON 0.0001f
 
 class Ray
 {

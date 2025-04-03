@@ -19,7 +19,7 @@
 //this value is used to for adaptive sampling,
 //if the spp of a tile is more than this value, it will be considered whether converged
 #define MIN_TILE_SPP 8
-#define ADAPTIVE_SAMPLING_THRESHOLD 0.001f
+#define ADAPTIVE_SAMPLING_THRESHOLD 0.00001f
 
 //these values are used for PPM
 #define PPM_SPP 32
@@ -121,20 +121,6 @@ public:
 			}
 			int startX = tile->x;
 			int startY = tile->y;
-			//if (tile->stop) {
-			//	for (int y = startY; y < startY + TILE_SIZE && y < film->height; y++) {
-			//		for (int x = startX; x < startX + TILE_SIZE && x < film->width; x++) {
-			//			
-			//			unsigned char r;
-			//			unsigned char g;
-			//			unsigned char b;
-			//			film->getLastRGB(x, y, r, g, b);
-			//			//comment the next line out, if you want to see adaptive sampling
-			//			canvas->draw(x, y, r, g, b);
-			//		}
-			//	}
-			//	continue;
-			//}
 
 			Vec3 tileSum = Vec3(0.0f, 0.0f, 0.0f);
 			Vec3 tileSumSquared = Vec3(0.0f, 0.0f, 0.0f);
@@ -152,13 +138,6 @@ public:
 					//Colour col =pathTrace(ray, pathThroughput, 0, &samplers[threadID]);
 					film->vecSPP[y * film->width + x]++;
 					film->splat(px, py, col);
-
-
-					/*unsigned char r = (unsigned char)(col.r * 255);
-					unsigned char g = (unsigned char)(col.g * 255);
-					unsigned char b = (unsigned char)(col.b * 255);
-					film->tonemap(x, y, r, g, b);
-					canvas->draw(x, y, r, g, b);*/
 
 					//adaptive sampling
 					Vec3 pixel(col.r, col.g, col.b);
