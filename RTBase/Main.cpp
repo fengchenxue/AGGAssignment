@@ -7,6 +7,8 @@
 
 int main(int argc, char *argv[])
 {
+	bool PPMMode = false;
+
 	// Initialize default parameters
 	std::string sceneName = "Scene/";
 	//sceneName+= "cornell-box";
@@ -16,7 +18,6 @@ int main(int argc, char *argv[])
 	std::string filename = "GI.hdr";
 	unsigned int SPP = 8192;
 
-	bool PPMMode = false;
 
 	if (argc > 1)
 	{
@@ -64,6 +65,8 @@ int main(int argc, char *argv[])
 	//scene->debugBVH();
 	bool running = true;
 	GamesEngineeringBase::Timer timer;
+
+	if (PPMMode) rt.PPMinit();
 	while (running)
 	{
 		canvas.checkInput();
@@ -103,7 +106,6 @@ int main(int argc, char *argv[])
 			rt.clear();
 		}
 		
-		if (PPMMode) rt.PPMinit();
 		// Time how long a render call takes
 		timer.reset();
 		

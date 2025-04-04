@@ -11,16 +11,15 @@
 
 //v = incident direction pointing toward the surface
 //n = surface normal pointing outward
+//for all coordinate systems
 inline Vec3 reflect(const Vec3& v, const Vec3& n)
 {
-	return v - n * 2.0f * v.dot(n);
+	return n * 2.0f * v.dot(n) - v;
 }
 
-inline Vec3 refract(const Vec3& v, const Vec3& n, float eta) {
-	float cosThetaI = -v.dot(n);
-	float k = 1.0f - eta * eta * (1.0f - cosThetaI * cosThetaI);
-	if (k < 0.0f) return Vec3(0.0f,0.0f,0.0f); // Total internal reflection
-	return (v * eta) + n * (eta * cosThetaI - std::sqrt(k));
+inline Vec3 refract(const Vec3& wi, float eta, float cosThetaT) {
+
+	return Vec3(-eta * wi.x, -eta * wi.y, -cosThetaT);
 }
 class BSDF;
 
@@ -49,36 +48,19 @@ public:
 class ShadingHelper
 {
 public:
-	//cosTheta is the cosine of the angle between the incident light direction and the surface normal
-	//iorI = index of refraction of the incident medium(where the light is coming from)
-	//iorT = index of refraction of the transmitted medium(where the light is going into)
-	//wi and wo should all point away from the surface.
-	static float fresnelDielectric(float cosThetaI, float iorI, float iorT)
+	static float fresnelDielectric(float cosThetaI, float cosThetaT, float eta)
 	{
 		// Add code here
-		
-		cosThetaI = std::clamp(cosThetaI, -1.0f, 1.0f);
-		bool entering = cosThetaI > 0.0f;
-		if (!entering) {
-			std::swap(iorI, iorT);
-			cosThetaI = std::abs(cosThetaI);
-		}
-
-		float sinThetaI = std::sqrt(std::max(0.0f, 1.0f - cosThetaI * cosThetaI));
-		float sinThetaT = (iorI / iorT) * sinThetaI;
-
-		if (sinThetaT >= 1.0f) return 1.0f;
-
-		float cosThetaT = std::sqrt(std::max(0.0f, 1.0f - sinThetaT * sinThetaT));
-		float rParallel = (iorT * cosThetaI - iorI * cosThetaT) / (iorT * cosThetaI + iorI * cosThetaT);
-		float rPerpendicular = (iorI * cosThetaI - iorT * cosThetaT) / (iorI * cosThetaI + iorT * cosThetaT);
-		return 0.5f * (rParallel * rParallel + rPerpendicular * rPerpendicular);
+		float rs = (cosThetaI - eta * cosThetaT) / (cosThetaI + eta * cosThetaT);
+		float rp = (eta * cosThetaI - cosThetaT) / (eta * cosThetaI + cosThetaT);
+		return 0.5f * (rs * rs + rp * rp);
 
 	}
 	static Colour fresnelConductor(float cosTheta, Colour eta, Colour k)
 	{
 		// Add code here
 		float cosTheta2 = cosTheta * cosTheta;
+		float sinTheta2 = 1.0f - cosTheta2;
 		Colour eta2 = eta * eta;
 		Colour k2 = k * k;
 
@@ -88,8 +70,8 @@ public:
 		Colour Rs = rs_num / rs_den;
 
 		// Compute Rp (parallel component)
-		Colour rp_num = (eta2 + k2) * cosTheta2 - eta * 2 * cosTheta + Colour(1.0f, 1.0f, 1.0f);
-		Colour rp_den = (eta2 + k2) * cosTheta2 + eta * 2 * cosTheta + Colour(1.0f, 1.0f, 1.0f);
+		Colour rp_num = (eta2 + k2) * cosTheta2 - eta * 2 * cosTheta + Colour(sinTheta2, sinTheta2, sinTheta2);
+		Colour rp_den = (eta2 + k2) * cosTheta2 + eta * 2 * cosTheta + Colour(sinTheta2, sinTheta2, sinTheta2);
 		Colour Rp = rp_num / rp_den;
 
 		// Average for unpolarized light
@@ -284,8 +266,7 @@ public:
 		}
 		Vec3 h = SamplingDistributions::ggxSampleHemisphere(sampler->next(), sampler->next(), alpha);
 		
-		//-wolocal because relect function regards w as incoming direction
-		Vec3 wilocal = reflect(-wolocal, h).normalize();
+		Vec3 wilocal = reflect(wolocal, h).normalize();
 		if (wilocal.z <= 0.0f) {
 			pdf = 0;
 			reflectedColour = Colour(0.0f, 0.0f, 0.0f);
@@ -383,48 +364,47 @@ public:
 		float iorI = entering ? extIOR : intIOR;
 		float iorT = entering ? intIOR : extIOR;
 		float eta = iorI / iorT;
+		//Vec3 normal = entering ? -normal : normal;
 
 		//incident angle
 		float cosThetaI = std::clamp(fabs(wolocal.z), 0.0f, 1.0f);
 
-		// Compute Fresnel term
-		float F = ShadingHelper::fresnelDielectric(cosThetaI,iorI,iorT);
-
 		// Handle total internal reflection
-		float sin2ThetaI = 1.0f - cosThetaI * cosThetaI;
-		float sin2ThetaT = eta * eta * sin2ThetaI;
+		float sin2ThetaT = eta * eta * (1.0f - cosThetaI * cosThetaI);
+		float cosThetaT = sqrt(1.0f - sin2ThetaT);
+		float F = ShadingHelper::fresnelDielectric(cosThetaI, cosThetaT, eta);
 		if (sin2ThetaT >= 1.0f) {
 			F = 1.0f;
 		}
 
 		Vec3 wi;
 		if (F >= 1.0f) { // Total reflection
-			Vec3 wiLocal = reflect(-wolocal, normal).normalize();
+			Vec3 wiLocal = reflect(wolocal, normal).normalize();
 			wi = shadingData.frame.toWorld(wiLocal);
 			reflectedColour = albedo->sample(shadingData.tu, shadingData.tv) * F;
 			pdf = 1.0f;
 		}
 		else {
 			if (sampler->next() < F) { // Reflect
-				Vec3 wiLocal = reflect(-wolocal, normal).normalize();
+				Vec3 wiLocal = reflect(wolocal, normal).normalize();
 				wi = shadingData.frame.toWorld(wiLocal);
 				reflectedColour = albedo->sample(shadingData.tu, shadingData.tv) * F;
 				pdf = F;
 			}
 			else { // Refract
 				// Compute refraction direction
-				Vec3 incidentDir = -wolocal;
+				Vec3 incidentDir = wolocal;
 				float cosThetaI = Dot(incidentDir, normal);
 				float k = 1.0f - eta * eta * (1.0f - cosThetaI * cosThetaI);
 				if (k < 0.0f) { // Total reflection (shouldn't happen here)
-					Vec3 wiLocal = reflect(-wolocal, normal).normalize();
+					Vec3 wiLocal = reflect(wolocal, normal).normalize();
 					wi = shadingData.frame.toWorld(wiLocal);
 					reflectedColour = albedo->sample(shadingData.tu, shadingData.tv) * F;
 					pdf = F;
 				}
 				else {
-					float cosThetaT = std::sqrt(k);
-					Vec3 wiLocal = refract(-wolocal, normal, eta).normalize();
+					float cosThetaT = sqrt(1.0f - sin2ThetaT);
+					Vec3 wiLocal = refract(wolocal, 1/eta,cosThetaT).normalize();
 					wi = shadingData.frame.toWorld(wiLocal);
 					// Account for solid angle compression
 					reflectedColour = albedo->sample(shadingData.tu, shadingData.tv) * (1 - F) / (eta * eta);
@@ -478,28 +458,76 @@ public:
 	Vec3 sample(const ShadingData& shadingData, Sampler* sampler, Colour& reflectedColour, float& pdf)
 	{
 		// Replace this with Dielectric sampling code
-		Vec3 wi = SamplingDistributions::cosineSampleHemisphere(sampler->next(), sampler->next());
-		pdf = wi.z / M_PI;
-		reflectedColour = albedo->sample(shadingData.tu, shadingData.tv) / M_PI;
-		wi = shadingData.frame.toWorld(wi);
+		Vec3 wolocal = shadingData.frame.toLocal(shadingData.wo).normalize();
+		Vec3 normal(0, 0, 1);
+
+		bool entering = wolocal.z < 0.0f;
+		float iorI = entering ? extIOR : intIOR;
+		float iorT = entering ? intIOR : extIOR;
+		float eta = iorI / iorT;
+		//Vec3 normal = entering ? -normal : normal;
+
+		//incident angle
+		float cosThetaI = std::clamp(fabs(wolocal.z), 0.0f, 1.0f);
+
+		// Handle total internal reflection
+		float sin2ThetaT = eta * eta * (1.0f - cosThetaI * cosThetaI);
+		float cosThetaT = sqrt(1.0f - sin2ThetaT);
+		float F = ShadingHelper::fresnelDielectric(cosThetaI, cosThetaT, eta);
+		if (sin2ThetaT >= 1.0f) {
+			F = 1.0f;
+		}
+
+		Vec3 wi;
+		if (F >= 1.0f) { // Total reflection
+			Vec3 wiLocal = reflect(wolocal, normal).normalize();
+			wi = shadingData.frame.toWorld(wiLocal);
+			reflectedColour = albedo->sample(shadingData.tu, shadingData.tv) * F;
+			pdf = 1.0f;
+		}
+		else {
+			if (sampler->next() < F) { // Reflect
+				Vec3 wiLocal = reflect(wolocal, normal).normalize();
+				wi = shadingData.frame.toWorld(wiLocal);
+				reflectedColour = albedo->sample(shadingData.tu, shadingData.tv) * F;
+				pdf = F;
+			}
+			else { // Refract
+				// Compute refraction direction
+				Vec3 incidentDir = wolocal;
+				float cosThetaI = Dot(incidentDir, normal);
+				float k = 1.0f - eta * eta * (1.0f - cosThetaI * cosThetaI);
+				if (k < 0.0f) { // Total reflection (shouldn't happen here)
+					Vec3 wiLocal = reflect(wolocal, normal).normalize();
+					wi = shadingData.frame.toWorld(wiLocal);
+					reflectedColour = albedo->sample(shadingData.tu, shadingData.tv) * F;
+					pdf = F;
+				}
+				else {
+					float cosThetaT = sqrt(1.0f - sin2ThetaT);
+					Vec3 wiLocal = refract(wolocal, 1 / eta, cosThetaT).normalize();
+					wi = shadingData.frame.toWorld(wiLocal);
+					// Account for solid angle compression
+					reflectedColour = albedo->sample(shadingData.tu, shadingData.tv) * (1 - F) / (eta * eta);
+					pdf = (1 - F) / (eta * eta) * abs(wiLocal.z) / abs(wolocal.z);
+				}
+			}
+		}
 		return wi;
-		//Vec3 wolocal = shadingData.frame.toLocal(shadingData.wo).normalize();
-		//float exaI = intIOR, exaE = extIOR;
-		//bool entering = wolocal.z > 0.0f;
-		////if entering, light enters the material. if not, light leaves the material
-		//if (!entering) std::swap(exaI, exaE);
 
 	}
 	Colour evaluate(const ShadingData& shadingData, const Vec3& wi)
 	{
 		// Replace this with Dielectric evaluation code
-		return albedo->sample(shadingData.tu, shadingData.tv) / M_PI;
+		//return albedo->sample(shadingData.tu, shadingData.tv) / M_PI;
+		return Colour(0.0f, 0.0f, 0.0f);
 	}
 	float PDF(const ShadingData& shadingData, const Vec3& wi)
 	{
 		// Replace this with Dielectric PDF
-		Vec3 wiLocal = shadingData.frame.toLocal(wi);
-		return SamplingDistributions::cosineHemispherePDF(wiLocal);
+		//Vec3 wiLocal = shadingData.frame.toLocal(wi);
+		//return SamplingDistributions::cosineHemispherePDF(wiLocal);
+		return 0.0f;
 	}
 	bool isPureSpecular()
 	{
