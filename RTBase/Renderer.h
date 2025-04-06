@@ -12,6 +12,7 @@
 #include <functional>
 #include <mutex>
 #include <queue>
+#include<atomic>
 
 #define MAX_DEPTH 5
 #define TILE_SIZE 16
@@ -22,11 +23,13 @@
 #define ADAPTIVE_SAMPLING_THRESHOLD 0.00001f
 
 //these values are used for PPM
-#define PPM_SPP 32
-#define PPM_maxIterations 100
-#define PPM_photonsPerIteration 100000
-#define PPM_initialRadius 1.0f
+#define PPM_MAX_RAY 4
+// PPM_MAX_BOUNCE=3 means a ray from the carmera can bounce 3 times
+#define PPM_MAX_BOUNCE 3
+#define PPM_photonsPerIteration 1000
+#define PPM_INITIAL_RADIUS 1.0f
 #define PPM_alpha 0.7f
+#define PPM_MAX_DEPTH 5
 
 inline float MISWeight(float pdf1, float pdf2)
 {
@@ -44,14 +47,93 @@ struct TileInfo
 	int convergedCount = 0;
 	bool stop = false;
 };
-
+//used for PPM to generate hitpoints from screen
 struct HitPoint{
 	Vec3 position;
 	Vec3 normal;
 	Colour flux = Colour(0.0f, 0.0f, 0.0f);
-	float radius = PPM_initialRadius;
+	Colour tau = Colour(0.0f, 0.0f, 0.0f);
+	Colour pathThroughput = Colour(1.0f, 1.0f, 1.0f);
+	float radius2 = PPM_INITIAL_RADIUS * PPM_INITIAL_RADIUS;
 	int photonCount = 0;
-	int pixelX, pixelY;
+	int totalPhotonCount = 0;
+	int depth = 0;
+};
+
+struct KDNode {
+	HitPoint* hitpoint;
+	KDNode* left = nullptr;
+	KDNode* right = nullptr;
+	int axis = -1;
+	KDNode(HitPoint* hp, int ax): hitpoint(hp), axis(ax) {}
+};
+
+class KDTree {
+public:
+	KDNode* root = nullptr;
+	void buildTree(std::vector<HitPoint*>& hitPoints) {
+		if (hitPoints.empty()) return;
+		root = build(hitPoints, 0);
+	}
+
+	void traverse(KDNode*node, const Vec3 &pos,const Vec3 &RayDir, std::vector<HitPoint*>& res) {
+		if (!node) return;
+		// Check if the current node is within the radius of the hitpoint
+		float dist2 = (node->hitpoint->position - pos).lengthSq();
+		if (dist2 <= node->hitpoint->radius2 && node->hitpoint->normal.dot(RayDir) < 0.0f) {
+			//********add code if the hitpoint is in the radius
+			res.push_back(node->hitpoint);
+			node->hitpoint->photonCount++;
+			node->hitpoint->flux = node->hitpoint->flux + node->hitpoint->tau;
+		}
+
+		// Check which side of the current node to traverse
+		float diff = pos.coords[node->axis] - node->hitpoint->position.coords[node->axis];
+		float diff2 = diff * diff;
+		if (diff < 0) {
+			traverse(node->left, pos, RayDir, res);
+			if (diff2 <= node->hitpoint->radius2) {
+				traverse(node->right, pos, RayDir, res);
+			}
+		}
+		else {
+			traverse(node->right, pos, RayDir, res);
+			if (diff2 <= node->hitpoint->radius2) {
+				traverse(node->left, pos, RayDir, res);
+			}
+		}
+
+	}
+
+	~KDTree() {
+		destroyTree(root);
+	}
+
+private:
+	KDNode* build(std::vector<HitPoint*>& hitPoints,int depth) {
+		if (hitPoints.empty()) return nullptr;
+		int axis = depth % 3;
+		std::sort(hitPoints.begin(), hitPoints.end(), [axis](HitPoint* a, HitPoint* b) {
+			return a->position.coords[axis] < b->position.coords[axis];
+			});
+
+		size_t medianIndex = hitPoints.size() / 2;
+		KDNode* node = new KDNode(hitPoints[medianIndex], axis);
+		std::vector<HitPoint*> leftPoints(hitPoints.begin(), hitPoints.begin() + medianIndex);
+		std::vector<HitPoint*> rightPoints(hitPoints.begin() + medianIndex + 1, hitPoints.end());
+
+		node->left = build(leftPoints, depth + 1);
+		node->right = build(rightPoints, depth + 1);
+		return node;
+	}
+
+	void destroyTree(KDNode* node) {
+		if (node) {
+			destroyTree(node->left);
+			destroyTree(node->right);
+			delete node;
+		}
+	}
 };
 
 class RayTracer
@@ -69,7 +151,10 @@ public:
 	bool stopThreads = false;
 	std::vector<TileInfo> tiles;
 	//PPM
-	std::vector<HitPoint> hitPoints;
+	std::vector<std::vector<HitPoint>> hitPoints;
+	std::unique_ptr<KDTree> kdTree = std::make_unique<KDTree>();
+	std::atomic<int> photonCount = 0;
+	Colour* DirectLight;
 
 	void init(Scene* _scene, GamesEngineeringBase::Window* _canvas)
 	{
@@ -242,7 +327,7 @@ public:
 						Light* hitlight = scene->getLightFromTriangleID(shadowIntersection.ID);
 
 						if (hitlight) {
-							pdf = hitlight->PDF(-wi, shadingData.x, shadowShadingData.x);
+							pdf = hitlight->PDF(wi, shadingData.x, shadowShadingData.x);
 							pdf_light = pdf * pmf;
 							W = MISWeight(pdf_bsdf, pdf_light);
 							float l = (shadowShadingData.x - shadingData.x).lengthSq();
@@ -255,7 +340,7 @@ public:
 				else {
 					// Environment light
 					emitted = scene->background->evaluate(wi);
-					pdf = scene->background->PDF(-wi, shadingData.x, shadowShadingData.x);
+					pdf = scene->background->PDF(wi, shadingData.x, shadowShadingData.x);
 					pdf_light = pdf * pmf;
 					W = MISWeight(pdf_bsdf, pdf_light);
 					float GTerm = max(Dot(wi, shadingData.sNormal), 0.0f);
@@ -280,8 +365,8 @@ public:
 						emitted = shadowShadingData.bsdf->emit(shadowShadingData, -wi);
 						Light* hitlight = scene->getLightFromTriangleID(shadowIntersection.ID);
 						if (hitlight) {
-							float l = (shadowShadingData.x - shadingData.x).lengthSq();
-							float GTerm = (max(Dot(wi, shadingData.sNormal), 0.0f) * max(Dot(-wi, hitlight->normal(wi)), 0.0f)) / l;
+							float l2 = (shadowShadingData.x - shadingData.x).lengthSq();
+							float GTerm = (max(Dot(wi, shadingData.sNormal), 0.0f) * max(Dot(-wi, hitlight->normal(wi)), 0.0f)) / l2;
 							L_bsdf = bsdf * emitted * GTerm / pdf_bsdf;
 						}
 					}
@@ -387,10 +472,9 @@ public:
 		}
 		return Colour(0.0f, 0.0f, 0.0f);
 	}
-	void render()
+	void render(bool denoising)
 	{
 		film->incrementSPP();
-		//std::cout << film->SPP << std::endl;
 		generateTiles();
 		for (int i = 0; i < numProcs; i++) {
 			threads[i] = new std::thread(&RayTracer::renderTile, this, i);
@@ -399,14 +483,13 @@ public:
 			threads[i]->join();
 			delete threads[i];
 		}
-
-		//film->denoise();
+		if(denoising) film->denoise();
 		for (int y = 0; y < film->height; y++) {
 			for (int x = 0; x < film->width; x++) {
 				unsigned char r;
 				unsigned char g;
 				unsigned char b;
-				film->tonemap(x, y, r, g, b);
+				film->tonemap(x, y, r, g, b,false);
 				canvas->draw(x, y, r, g, b);
 			}
 		}
@@ -424,163 +507,228 @@ public:
 		stbi_write_png(filename.c_str(), canvas->getWidth(), canvas->getHeight(), 3, canvas->getBackBuffer(), canvas->getWidth() * 3);
 	}
 
-	Colour computeDirect(ShadingData shadingData, Sampler* sampler)
-	{
-		// Is surface is specular we cannot computing direct lighting
-		if (shadingData.bsdf->isPureSpecular() == true)
-		{
-			return Colour(0.0f, 0.0f, 0.0f);
+	//--------PPM--------
+	void renderPPM(bool denoising) {
+		photonCount = 0;
+		generateTiles();
+
+		for (int i = 0; i < numProcs; i++) {
+			threads[i] = new std::thread(&RayTracer::renderPPMPhoton, this, i);
+		}		film->incrementSPP();
+		for (int i = 0; i < numProcs; i++) {
+			threads[i]->join();
+			delete threads[i];
 		}
-		// Sample a light
-		float pmf;
-		Light* light = scene->sampleLight(sampler, pmf);
-		// Sample a point on the light
-		float pdf;
-		Colour emitted;
-		Vec3 p = light->sample(sampler, emitted, pdf);
-		if (light->isArea())
-		{
-			// Calculate GTerm
-			Vec3 wi = p - shadingData.x;
-			float l = wi.lengthSq();
-			wi = wi.normalize();
-			float GTerm = (max(Dot(wi, shadingData.sNormal), 0.0f) * max(-Dot(wi, light->normal(wi)), 0.0f)) / l;
-			if (GTerm > 0)
-			{
-				// Trace
-				if (scene->visible(shadingData.x, p))
-				{
-					if (pdf <= EPSILON) {
-						//std::cout << pdf << std::endl;
-						return Colour(0.0f, 0.0f, 0.0f);
+
+		for (int y = 0; y < film->height; y++) {
+			for (int x = 0; x < film->width; x++) {
+				int index = y * film->width + x;
+				Colour result(0.0f, 0.0f, 0.0f);
+				for (HitPoint& hp : hitPoints[index]) {
+					if (hp.photonCount > 0) {
+						
+						float oldradius2 = hp.radius2;
+						hp.radius2 = hp.radius2 * (hp.totalPhotonCount + PPM_alpha * hp.photonCount) / (hp.totalPhotonCount + hp.photonCount);
+						hp.tau = (hp.flux + hp.tau) * hp.radius2 / oldradius2;
+						result = result + hp.tau / (hp.radius2 * M_PI* PPM_photonsPerIteration);
+						
+						hp.totalPhotonCount += hp.photonCount;
+						hp.flux = Colour(0, 0, 0);
+						hp.photonCount = 0;
+
 					}
-					// Shade
-					return shadingData.bsdf->evaluate(shadingData, wi) * emitted * GTerm / (pmf * pdf);
 				}
+				result = (result + DirectLight[index]) / PPM_MAX_RAY;
+				film->film[index] = result;
 			}
 		}
-		else
-		{
-			// Calculate GTerm
-			Vec3 wi = p;
-			float GTerm = max(Dot(wi, shadingData.sNormal), 0.0f);
-			if (GTerm > 0)
-			{
-				// Trace
-				if (scene->visible(shadingData.x, shadingData.x + (p * 10000.0f)))
-				{
-					if (pdf <= EPSILON) {
-						//std::cout << pdf << std::endl;
-						return Colour(0.0f, 0.0f, 0.0f);
-					}
-					// Shade
-					return shadingData.bsdf->evaluate(shadingData, wi) * emitted * GTerm / (pmf * pdf);
-				}
+
+		if (denoising) film->denoise();
+		for (int y = 0; y < film->height; y++) {
+			for (int x = 0; x < film->width; x++) {
+				unsigned char r;
+				unsigned char g;
+				unsigned char b;
+				film->tonemap(x, y, r, g, b,true);
+				canvas->draw(x, y, r, g, b);
 			}
 		}
-		return Colour(0.0f, 0.0f, 0.0f);
+		
 	}
-	Colour pathTrace(Ray& r, Colour pathThroughput, int depth, Sampler* sampler, bool canHitLight = true)
-	{
-		// Add pathtracer code here
-		IntersectionData intersection = scene->traverse(r);
-		ShadingData shadingData = scene->calculateShadingData(intersection, r);
-		if (shadingData.t < FLT_MAX)
-		{
-			//------Lights------
-			if (shadingData.bsdf->isLight())
+	void renderPPMPhoton(int threadID) {
+
+		//photon pass
+		while (photonCount< PPM_photonsPerIteration){
+			float pmf, pdfPos, pdfDir;
+			Light* light = scene->sampleLight(&samplers[threadID], pmf);
+			Vec3 lightPos = light->samplePositionFromLight(&samplers[threadID], pdfPos);
+			Vec3 lightDir = light->sampleDirectionFromLight(&samplers[threadID], pdfDir);
+			if (pdfPos < EPSILON || pdfDir < EPSILON) {
+				continue;
+			}
+			photonCount++;
+			Ray photon(lightPos + lightDir * EPSILON, lightDir);
+			//the total power of the light source
+			float totalPower = light->totalIntegratedPower();
+			Colour flux = Colour(totalPower,totalPower,totalPower) / (pmf * pdfPos * pdfDir* PPM_photonsPerIteration);
+			//Colour Le = light->evaluate(-lightDir);
+			//Colour flux = Le / (pmf * pdfPos * pdfDir * PPM_photonsPerIteration);
+			
+
+			for (int depth = 0; depth < PPM_MAX_DEPTH; depth++)
 			{
-				if (canHitLight)
+				IntersectionData intersection = scene->traverse(photon);
+				ShadingData shadingData = scene->calculateShadingData(intersection, photon);
+				if (shadingData.t >= FLT_MAX) break;
+				//if (shadingData.bsdf->isPureSpecular()) break;
+
+				for (int y = 0; y < film->height; y ++) {
+					for (int x = 0; x < film->width; x ++) {
+						int index = y * film->width + x;
+						for (HitPoint& hp : hitPoints[index]) {
+							float dist2 = (hp.position - photon.at(intersection.t)).lengthSq();
+							if (dist2 < hp.radius2 && hp.normal.dot(shadingData.sNormal)>0.95f) {
+								//*******here need to check pure specular
+								Vec3 wi = -photon.dir;
+								Colour bsdf = shadingData.bsdf->evaluate(shadingData, wi);
+								float cosTheta = fabs(Dot(wi, shadingData.sNormal));
+
+								std::lock_guard<std::mutex> lock(tileQueueMutex);
+								hp.photonCount++;
+								hp.flux = hp.flux + flux * bsdf * cosTheta;
+
+							}
+						}
+					}
+				}
+				//Russian Roulette
+				float russianRouletteProbability = max(0.0f, min(flux.Lum(), 0.9f));
+				if (samplers[threadID].next() < russianRouletteProbability)
 				{
-					return pathThroughput * shadingData.bsdf->emit(shadingData, shadingData.wo);
+					flux = flux / russianRouletteProbability;
 				}
 				else
 				{
-					return Colour(0.0f, 0.0f, 0.0f);
+					break;
 				}
-			}
-			Colour Lo(0.0f, 0.0f, 0.0f);
-			//------Emissive Materials------
-			if (shadingData.bsdf->isEmissive())
-			{
-				Lo = Lo + pathThroughput * shadingData.bsdf->emit(shadingData, shadingData.wo);
-			}
-			//------Direct Lighting------
-			Lo = Lo + pathThroughput * computeDirect(shadingData, sampler);
-			//Max Depth
-			if (depth > MAX_DEPTH)
-			{
-				return Lo;
-			}
-			//Russian Roulette
-			float russianRouletteProbability = max(0.0f, min(pathThroughput.Lum(), 0.9f));
-			if (sampler->next() < russianRouletteProbability)
-			{
-				pathThroughput = pathThroughput / russianRouletteProbability;
-			}
-			else
-			{
-				return Lo;
-			}
-			//------Indirect Lighting------
-			//need to solve glass material
-			Colour bsdf;
-			float pdf;
-			Vec3 wi = shadingData.bsdf->sample(shadingData, sampler, bsdf, pdf);
-			float cosTheta = Dot(wi, shadingData.sNormal);
-			if (pdf > 0.0f && cosTheta > 0.0f) {
-				pathThroughput = pathThroughput * bsdf * cosTheta / pdf;
-				Ray nextRay;
-				nextRay.init(shadingData.x + (wi * EPSILON), wi);
-				return (Lo + pathTrace(nextRay, pathThroughput, depth + 1, sampler, shadingData.bsdf->isPureSpecular()));
-			}
-			return Lo;
-		}
-		return scene->background->evaluate(r.dir);
-	}
 
 
-	//--------PPM--------
-	void renderPPM() {
+				float pdf;
+				Colour bsdf;
+				Vec3 wi = shadingData.bsdf->sample(shadingData, &samplers[threadID], bsdf, pdf);
+				if (pdf < EPSILON) break;
 
-		//photon pass
-		for (int it = 0; it < PPM_maxIterations; it++) {
-			for (int i = 0; i < PPM_photonsPerIteration; i++) {
-				float pmf, pdfPos, pdfDir;
-				Light* light = scene->sampleLight(&samplers[0], pmf);
-				Vec3 lightPos = light->samplePositionFromLight(&samplers[0], pdfPos);
-				Vec3 lightDir = light->sampleDirectionFromLight(&samplers[0], pdfDir);
-				Colour flux = light->evaluate(lightDir) * light->totalIntegratedPower() / (pmf * pdfPos * pdfDir);
+				float cosTheta = Dot(wi, shadingData.sNormal);
+				if (cosTheta < 0.0f) break;
+				flux = flux * bsdf * cosTheta / pdf;
+				photon.init(shadingData.x + (wi * EPSILON), wi);
 
-				Ray photon(lightPos + lightDir * EPSILON, lightDir);
 			}
 		}
 	}
+
 	//generate hitpoints
-	void PPMinit() {
-		for (int y = 0; y < film->height; y++) {
-			for (int x = 0; x < film->width; x++) {
-				for (int i = 0; i < PPM_SPP; i++) {
+	//add simple multithreading
+	void PPM_init() {
+		DirectLight = new Colour[film->width * film->height];
 
-					float px = x + samplers[0].next();
-					float py = y + samplers[0].next();
-					Ray ray = scene->camera.generateRay(px, py);
+		if (hitPoints.empty()) {
+			hitPoints.resize(film->width * film->height);
+		}
+		generateTiles();
+		for (int i = 0; i < numProcs; i++) {
+			threads[i] = new std::thread(&RayTracer::PPM_GenerateHP_Multithread, this, i);
+		}
+		for (int i = 0; i < numProcs; i++) {
+			threads[i]->join();
+			delete threads[i];
+		}
 
-					IntersectionData intersection = scene->traverse(ray);
-					ShadingData shadingData = scene->calculateShadingData(intersection, ray);
+		std::vector<HitPoint*> flatHitPoints;
+		//initial KDTree
+		for (auto& hps : hitPoints) {
+			for (HitPoint& hp : hps) {
+				HitPoint* ptr = &hp;
+				flatHitPoints.push_back(ptr);
+			}
+		}
+		kdTree->buildTree(flatHitPoints);
+	}
+	void PPM_GenerateHP_Multithread(int threadID) {
+		
+		while (!stopThreads) {
+			TileInfo* tile;
+			{
+				std::lock_guard<std::mutex> lock(tileQueueMutex);
+				if (tileQueue.empty()) return;
+				tile = std::move(tileQueue.front());
+				tileQueue.pop();
+			}
+			int xStart = tile->x;
+			int yStart = tile->y;
 
-					if (shadingData.t < FLT_MAX) {
-						Triangle& triangle = scene->triangles[intersection.ID];
+			int xEnd = min(xStart + TILE_SIZE, film->width);
+			int yEnd = min(yStart + TILE_SIZE, film->height);
 
-						HitPoint hp;
-						hp.position = shadingData.x;
-						hp.normal = shadingData.sNormal;
-						hp.pixelX = x;
-						hp.pixelY = y;
-						hitPoints.push_back(hp);
+			for (int y = yStart; y < yEnd; y++) {
+				for (int x = xStart; x < xEnd; x++) {
+					int index = y * film->width + x;
+					for (int i = 0; i < PPM_MAX_RAY;i++) {
+						float px = x + samplers[threadID].next();
+						float py = y + samplers[threadID].next();
+						Ray ray = scene->camera.generateRay(px, py);
+						PPM_GenerateHP_Bounce(ray, 0, &samplers[threadID], index, Colour(0,0,0));
+						
 					}
 				}
 			}
 		}
+	}
+	//One ray can generate multiple hitpoints by bouncing
+	//Hitpoints can only be placed on the DIFFUSE surface
+	void PPM_GenerateHP_Bounce(Ray&ray,int depth,Sampler *sampler,int index, Colour throughput) {
+
+		IntersectionData intersection = scene->traverse(ray);
+		ShadingData shadingData = scene->calculateShadingData(intersection, ray);
+
+		if (shadingData.t < FLT_MAX) {
+			//1.if ray intersects an emissive surface
+			if (shadingData.bsdf->isEmissive()) {
+				//1.1 if the ray is a light
+				if (shadingData.bsdf->isLight()) {
+					DirectLight[index] = DirectLight[index]+ shadingData.bsdf->emit(shadingData, shadingData.wo);
+					// discard the ray that hits the light
+					return;
+				}
+				//1.2 if the ray is not a light, store (emission * pathThroughput), then regard this point as non-emissive material
+				DirectLight[index] = DirectLight[index] + shadingData.bsdf->emit(shadingData, shadingData.wo) * throughput;
+			}
+			//2. if the ray hits a non-pure specular surface, store hit point and return
+			if (!shadingData.bsdf->isPureSpecular()) {
+				HitPoint hp;
+				hp.position = shadingData.x;
+				hp.normal = shadingData.sNormal;
+				hp.depth = depth;
+				hp.pathThroughput = throughput;
+				hitPoints[index].push_back(hp);
+				return;
+			}
+			//3.For pure specular, we don't store the hitpoint, only check next bounce
+			if (depth < PPM_MAX_BOUNCE) {
+				float pdf;
+				Colour bsdf;
+				Vec3 wi = shadingData.bsdf->sample(shadingData, sampler, bsdf, pdf);
+				if (pdf < EPSILON) return;
+				// it is pure specular, so cosTheta = 1
+				Colour NextThroughput = throughput * bsdf / pdf;
+
+				Ray nextRay;
+				nextRay.init(shadingData.x + (wi * EPSILON), wi);
+				PPM_GenerateHP_Bounce(nextRay, depth + 1, sampler, index, NextThroughput);
+			}
+		}
+		// 4. if the ray misses the scene, add background colour
+		//but background color is (0,0,0), so this step is not needed
+
 	}
 };

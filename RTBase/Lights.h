@@ -143,12 +143,14 @@ class Light
 {
 public:
 	virtual Vec3 sample(Sampler* sampler, Colour& emittedColour, float& pdf, const Vec3& startPos = Vec3()) = 0;
+	//wi is toward the light
 	virtual Colour evaluate(const Vec3& wi) = 0;
 	virtual float PDF(const Vec3& wi, const Vec3& startPos = Vec3(), const Vec3& TargetPos = Vec3()) = 0;
 	virtual bool isArea() = 0;
 	virtual Vec3 normal(const Vec3& wi) = 0;
 	virtual float totalIntegratedPower() = 0;
 	virtual Vec3 samplePositionFromLight(Sampler* sampler, float& pdf) = 0;
+	//return wo
 	virtual Vec3 sampleDirectionFromLight(Sampler* sampler, float& pdf) = 0;
 };
 
@@ -163,15 +165,19 @@ public:
 		Vec3 pos= triangle->sample(sampler, pdf);
 
 		float l2 = (startPos - pos).lengthSq();
-		Vec3 wi = (startPos - pos).normalize();
-		float cosTheta = std::max(Dot(wi, triangle->gNormal()), 0.0f);
+		Vec3 wo = (startPos - pos).normalize();
+		
+		float cosTheta = Dot(wo, triangle->gNormal());
+		if (cosTheta < EPSILON) { 
+			pdf = 0.0f;
+			return Vec3(0.0f, 0.0f, 0.0f); 
+		}
 		pdf = l2 / (triangle->area * cosTheta);
-
 		return pos;
 	}
 	Colour evaluate(const Vec3& wi)
 	{
-		if (Dot(wi, triangle->gNormal()) > 0.0f)
+		if (Dot(wi, triangle->gNormal())< 0.0f)
 		{
 			return emission;
 		}
@@ -180,7 +186,7 @@ public:
 	float PDF(const Vec3& wi, const Vec3& startPos = Vec3(), const Vec3& TargetPos = Vec3())
 	{
 		float l2 = (TargetPos - startPos).lengthSq();
-		float cosTheta = std::max(Dot(wi, triangle->gNormal()), 0.0f);
+		float cosTheta = Dot(-wi, triangle->gNormal());
 		if (cosTheta < EPSILON) return 0.0f;
 		return l2 / (triangle->area * cosTheta);
 	}
@@ -203,11 +209,11 @@ public:
 	Vec3 sampleDirectionFromLight(Sampler* sampler, float& pdf)
 	{
 		// Add code to sample a direction from the light
-		Vec3 wi = SamplingDistributions::cosineSampleHemisphere(sampler->next(), sampler->next());
-		pdf = SamplingDistributions::cosineHemispherePDF(wi);
+		Vec3 wo = SamplingDistributions::cosineSampleHemisphere(sampler->next(), sampler->next());
+		pdf = SamplingDistributions::cosineHemispherePDF(wo);
 		Frame frame;
 		frame.fromVector(triangle->gNormal());
-		return frame.toWorld(wi);
+		return frame.toWorld(wo);
 	}
 };
 
@@ -251,14 +257,14 @@ public:
 		Vec3 p = SamplingDistributions::uniformSampleSphere(sampler->next(), sampler->next());
 		p = p * use<SceneBounds>().sceneRadius;
 		p = p + use<SceneBounds>().sceneCentre;
-		pdf = 4 * M_PI * use<SceneBounds>().sceneRadius * use<SceneBounds>().sceneRadius;
+		pdf = 1/4 * M_PI * use<SceneBounds>().sceneRadius * use<SceneBounds>().sceneRadius;
 		return p;
 	}
 	Vec3 sampleDirectionFromLight(Sampler* sampler, float& pdf)
 	{
 		Vec3 wi = SamplingDistributions::uniformSampleSphere(sampler->next(), sampler->next());
 		pdf = SamplingDistributions::uniformSpherePDF(wi);
-		return wi;
+		return -wi;
 	}
 };
 
@@ -276,7 +282,7 @@ public:
 	{
 		delete distribution;
 	}
-
+	//return wi toward the light
 	Vec3 sample(Sampler* sampler, Colour& reflectedColour, float& pdf, const Vec3& startPos = Vec3())
 	{
 		// Assignment: Update this code to importance sampling lighting based on luminance of each pixel
@@ -310,7 +316,6 @@ public:
 	float PDF(const Vec3& wi, const Vec3& startPos = Vec3(), const Vec3& TargetPos = Vec3())
 	{
 		// Assignment: Update this code to return the correct PDF of luminance weighted importance sampling
-		//return SamplingDistributions::uniformSpherePDF(wi);
 		float u = atan2f(wi.z, wi.x);
 		u = (u < 0.0f) ? u + (2.0f * M_PI) : u;
 		u = u/ (2.0f * M_PI);
@@ -359,6 +364,6 @@ public:
 		// Replace this tabulated sampling of environment maps
 
 		Colour emittedColour;
-		return sample(sampler, emittedColour, pdf);
+		return -sample(sampler, emittedColour, pdf);
 	}
 };

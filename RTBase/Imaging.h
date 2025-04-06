@@ -253,18 +253,19 @@ public:
 			}
 		}
 	}
-	void tonemap(int x, int y, unsigned char& r, unsigned char& g, unsigned char& b, float exposure = 1.0f)
+	void tonemap(int x, int y, unsigned char& r, unsigned char& g, unsigned char& b, bool PPM, float exposure = 1.0f)
 	{
 		// Return a tonemapped pixel at coordinates x, y
-		//float* output = (float*)outputBuffer.getData();
-		//int index = y * width + x;
-		//Colour color(outputBuffer[index * 3], outputBuffer[index * 3 + 1], outputBuffer[index * 3 + 2]);
-		//Colour color(output[index * 3], output[index * 3 + 1], output[index * 3 + 2]);
-		//color = color * exposure;
 		
-		Colour color = film[y * width + x] / (float)vecSPP[y * width + x];
-		color = color * exposure;
-
+		Colour color;
+		if (PPM)
+		{
+			color = film[y * width + x] * exposure;
+		}
+		else
+		{
+			color = film[y * width + x] * exposure / (float)vecSPP[y * width + x];
+		}
 
 		// ACES Filmic Approximation (Narkowicz 2015)
 		const float A = 2.51f;
@@ -293,10 +294,6 @@ public:
 		g = (unsigned char)(color.g * 255);
 		b = (unsigned char)(color.b * 255);
 		
-		//lastFilmR[y * width + x] = r;
-		//lastFilmG[y * width + x] = g;
-		//lastFilmB[y * width + x] = b;
-		
 	}
 	// Do not change any code below this line
 	void init(int _width, int _height, ImageFilter* _filter)
@@ -308,6 +305,7 @@ public:
 		filter = _filter;
 		vecSPP.resize(width * height,0);
 
+		//I need to change code here
 		//denoise
 		device = oidn::newDevice(OIDN_DEVICE_TYPE_CPU);
 		device.commit();
@@ -340,12 +338,8 @@ public:
 		stbi_write_hdr(filename.c_str(), width, height, 3, (float*)hdrpixels);
 		delete[] hdrpixels;
 	}
-	/*void drawInputBuffer(int x, int y, float r, float g, float b)
-	{
-		inputBuffer[(y * width + x) * 3] = r;
-		inputBuffer[(y * width + x) * 3 + 1] = g;
-		inputBuffer[(y * width + x) * 3 + 2] = b;
-	}*/
+
+	//I added this function
 	void denoise() {
 		
 		float* input = (float*)inputBuffer.getData();
@@ -368,17 +362,8 @@ public:
 					input[index + 1] = 0.0f;
 					input[index + 2] = 0.0f;
 				}
-				/*inputBuffer[(y * width + x) * 3] = film[y * width + x].r / (float)vecSPP[y * width + x];
-				inputBuffer[(y * width + x) * 3 + 1] = film[y * width + x].g / (float)vecSPP[y * width + x];
-				inputBuffer[(y * width + x) * 3 + 2] = film[y * width + x].b / (float)vecSPP[y * width + x];*/
 			}
 		}
 		denoiseFilter.execute();
 	}
-	/*void getLastRGB(int x, int y, unsigned char& r, unsigned char& g, unsigned char& b)
-	{
-		r = lastFilmR[y * width + x];
-		g = lastFilmG[y * width + x];
-		b = lastFilmB[y * width + x];
-	}*/
 };

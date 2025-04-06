@@ -7,7 +7,8 @@
 
 int main(int argc, char *argv[])
 {
-	bool PPMMode = false;
+	bool PPMMode = true;
+	bool denoising = false;
 
 	// Initialize default parameters
 	std::string sceneName = "Scene/";
@@ -15,6 +16,7 @@ int main(int argc, char *argv[])
 	sceneName+= "MaterialsScene";
 	//sceneName+= "bathroom";
 	//sceneName += "teapot-full";
+	//sceneName += "kitchen";
 	std::string filename = "GI.hdr";
 	unsigned int SPP = 8192;
 
@@ -63,10 +65,12 @@ int main(int argc, char *argv[])
 	RayTracer rt;
 	rt.init(scene, &canvas);
 	//scene->debugBVH();
+	if (PPMMode) rt.PPM_init();
+	
 	bool running = true;
 	GamesEngineeringBase::Timer timer;
 
-	if (PPMMode) rt.PPMinit();
+
 	while (running)
 	{
 		canvas.checkInput();
@@ -109,8 +113,8 @@ int main(int argc, char *argv[])
 		// Time how long a render call takes
 		timer.reset();
 		
-		if (PPMMode) rt.renderPPM();
-		else rt.render();
+		if (PPMMode) rt.renderPPM(denoising);
+		else rt.render(denoising);
 
 		float t = timer.dt();
 

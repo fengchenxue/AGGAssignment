@@ -118,6 +118,7 @@ class BSDF
 {
 public:
 	Colour emission;
+	//toward outside
 	virtual Vec3 sample(const ShadingData& shadingData, Sampler* sampler, Colour& reflectedColour, float& pdf) = 0;
 	virtual Colour evaluate(const ShadingData& shadingData, const Vec3& wi) = 0;
 	virtual float PDF(const ShadingData& shadingData, const Vec3& wi) = 0;
@@ -209,7 +210,7 @@ public:
 		float cosTheta = wilocal.z;
 		if (abs(cosTheta) < EPSILON) cosTheta = EPSILON;
 
-		reflectedColour = albedo->sample(shadingData.tu, shadingData.tv) / cosTheta;
+		reflectedColour = albedo->sample(shadingData.tu, shadingData.tv);
 
 		return shadingData.frame.toWorld(wilocal);
 
