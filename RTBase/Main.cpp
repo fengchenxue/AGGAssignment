@@ -12,8 +12,8 @@ int main(int argc, char *argv[])
 
 	// Initialize default parameters
 	std::string sceneName = "Scene/";
-	//sceneName+= "cornell-box";
-	sceneName+= "MaterialsScene";
+	sceneName+= "cornell-box";
+	//sceneName+= "MaterialsScene";
 	//sceneName+= "bathroom";
 	//sceneName += "teapot-full";
 	//sceneName += "kitchen";

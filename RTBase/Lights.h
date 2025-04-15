@@ -152,6 +152,8 @@ public:
 	virtual Vec3 samplePositionFromLight(Sampler* sampler, float& pdf) = 0;
 	//return wo
 	virtual Vec3 sampleDirectionFromLight(Sampler* sampler, float& pdf) = 0;
+	//used for PPM to get the photon flux
+	virtual Colour getTotalPhotonFlux(const Vec3& wi) = 0;
 };
 
 class AreaLight : public Light
@@ -215,6 +217,11 @@ public:
 		frame.fromVector(triangle->gNormal());
 		return frame.toWorld(wo);
 	}
+	//flux=pi*area*radiance
+	Colour getTotalPhotonFlux(const Vec3& wi)
+	{
+		return evaluate(wi) * triangle->area * M_PI;
+	}
 };
 
 class BackgroundColour : public Light
@@ -265,6 +272,11 @@ public:
 		Vec3 wi = SamplingDistributions::uniformSampleSphere(sampler->next(), sampler->next());
 		pdf = SamplingDistributions::uniformSpherePDF(wi);
 		return -wi;
+	}
+	Colour getTotalPhotonFlux(const Vec3& wi)
+	{
+		return evaluate(wi) * 4.0f * M_PI;
+
 	}
 };
 
@@ -365,5 +377,10 @@ public:
 
 		Colour emittedColour;
 		return -sample(sampler, emittedColour, pdf);
+	}
+	// flux=Le*2*pi*pi
+	Colour getTotalPhotonFlux(const Vec3& wi)
+	{
+		return evaluate(wi) * 2.0f * M_PI * M_PI;
 	}
 };

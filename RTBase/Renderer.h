@@ -51,7 +51,9 @@ struct TileInfo
 struct HitPoint{
 	Vec3 position;
 	Vec3 normal;
+	//temporary flux
 	Colour flux = Colour(0.0f, 0.0f, 0.0f);
+	//accumulated flux
 	Colour tau = Colour(0.0f, 0.0f, 0.0f);
 	Colour pathThroughput = Colour(1.0f, 1.0f, 1.0f);
 	float radius2 = PPM_INITIAL_RADIUS * PPM_INITIAL_RADIUS;
@@ -76,33 +78,32 @@ public:
 		root = build(hitPoints, 0);
 	}
 
-	void traverse(KDNode*node, const Vec3 &pos,const Vec3 &RayDir, std::vector<HitPoint*>& res) {
+	void traverse(KDNode* node, const Vec3& pos, const Vec3& RayDir, std::vector<std::pair<HitPoint*, Colour>>& res, const Colour & col) {
 		if (!node) return;
 		// Check if the current node is within the radius of the hitpoint
 		float dist2 = (node->hitpoint->position - pos).lengthSq();
 		if (dist2 <= node->hitpoint->radius2 && node->hitpoint->normal.dot(RayDir) < 0.0f) {
-			//********add code if the hitpoint is in the radius
-			res.push_back(node->hitpoint);
-			node->hitpoint->photonCount++;
-			node->hitpoint->flux = node->hitpoint->flux + node->hitpoint->tau;
+
+			res.push_back(std::make_pair(node->hitpoint, col));
+			//node->hitpoint->photonCount++;
+			//node->hitpoint->flux = node->hitpoint->flux + col;
 		}
 
 		// Check which side of the current node to traverse
 		float diff = pos.coords[node->axis] - node->hitpoint->position.coords[node->axis];
 		float diff2 = diff * diff;
 		if (diff < 0) {
-			traverse(node->left, pos, RayDir, res);
+			traverse(node->left, pos, RayDir, res,col);
 			if (diff2 <= node->hitpoint->radius2) {
-				traverse(node->right, pos, RayDir, res);
+				traverse(node->right, pos, RayDir, res,col);
 			}
 		}
 		else {
-			traverse(node->right, pos, RayDir, res);
+			traverse(node->right, pos, RayDir, res,col);
 			if (diff2 <= node->hitpoint->radius2) {
-				traverse(node->left, pos, RayDir, res);
+				traverse(node->left, pos, RayDir, res,col);
 			}
 		}
-
 	}
 
 	~KDTree() {
@@ -110,7 +111,7 @@ public:
 	}
 
 private:
-	KDNode* build(std::vector<HitPoint*>& hitPoints,int depth) {
+	KDNode* build(std::vector<HitPoint*>& hitPoints, int depth) {
 		if (hitPoints.empty()) return nullptr;
 		int axis = depth % 3;
 		std::sort(hitPoints.begin(), hitPoints.end(), [axis](HitPoint* a, HitPoint* b) {
@@ -155,6 +156,8 @@ public:
 	std::unique_ptr<KDTree> kdTree = std::make_unique<KDTree>();
 	std::atomic<int> photonCount = 0;
 	Colour* DirectLight;
+	//store results of PPM photon pass, then it will be calculated in the main thread
+	std::vector<std::pair<HitPoint*, Colour>> cacheHP[64];
 
 	void init(Scene* _scene, GamesEngineeringBase::Window* _canvas)
 	{
@@ -483,13 +486,13 @@ public:
 			threads[i]->join();
 			delete threads[i];
 		}
-		if(denoising) film->denoise();
+		if (denoising) film->denoise();
 		for (int y = 0; y < film->height; y++) {
 			for (int x = 0; x < film->width; x++) {
 				unsigned char r;
 				unsigned char g;
 				unsigned char b;
-				film->tonemap(x, y, r, g, b,false);
+				film->tonemap(x, y, r, g, b, false);
 				canvas->draw(x, y, r, g, b);
 			}
 		}
@@ -513,25 +516,35 @@ public:
 		generateTiles();
 
 		for (int i = 0; i < numProcs; i++) {
-			threads[i] = new std::thread(&RayTracer::renderPPMPhoton, this, i);
+			threads[i] = new std::thread(&RayTracer::PPM_GeneratePhoton_MultiThread, this, i);
 		}		film->incrementSPP();
 		for (int i = 0; i < numProcs; i++) {
 			threads[i]->join();
 			delete threads[i];
 		}
-
+		//calculate hitpoint results from PPM_GeneratePhoton_MultiThread
+		for (auto& cache : cacheHP) {
+			for (auto& pair : cache) {
+				HitPoint* hp = pair.first;
+				Colour col = pair.second;
+				hp->flux = hp->flux + col;
+				hp->photonCount++;
+			}
+			cache.clear();
+		}
+		
 		for (int y = 0; y < film->height; y++) {
 			for (int x = 0; x < film->width; x++) {
 				int index = y * film->width + x;
 				Colour result(0.0f, 0.0f, 0.0f);
 				for (HitPoint& hp : hitPoints[index]) {
 					if (hp.photonCount > 0) {
-						
+
 						float oldradius2 = hp.radius2;
 						hp.radius2 = hp.radius2 * (hp.totalPhotonCount + PPM_alpha * hp.photonCount) / (hp.totalPhotonCount + hp.photonCount);
 						hp.tau = (hp.flux + hp.tau) * hp.radius2 / oldradius2;
-						result = result + hp.tau / (hp.radius2 * M_PI* PPM_photonsPerIteration);
-						
+						result = result + hp.tau * hp.pathThroughput / (hp.radius2 * M_PI);
+
 						hp.totalPhotonCount += hp.photonCount;
 						hp.flux = Colour(0, 0, 0);
 						hp.photonCount = 0;
@@ -549,16 +562,16 @@ public:
 				unsigned char r;
 				unsigned char g;
 				unsigned char b;
-				film->tonemap(x, y, r, g, b,true);
+				film->tonemap(x, y, r, g, b, true);
 				canvas->draw(x, y, r, g, b);
 			}
 		}
-		
+
 	}
-	void renderPPMPhoton(int threadID) {
+	void PPM_GeneratePhoton_MultiThread(int threadID) {
 
 		//photon pass
-		while (photonCount< PPM_photonsPerIteration){
+		while (photonCount < PPM_photonsPerIteration) {
 			float pmf, pdfPos, pdfDir;
 			Light* light = scene->sampleLight(&samplers[threadID], pmf);
 			Vec3 lightPos = light->samplePositionFromLight(&samplers[threadID], pdfPos);
@@ -568,60 +581,49 @@ public:
 			}
 			photonCount++;
 			Ray photon(lightPos + lightDir * EPSILON, lightDir);
-			//the total power of the light source
-			float totalPower = light->totalIntegratedPower();
-			Colour flux = Colour(totalPower,totalPower,totalPower) / (pmf * pdfPos * pdfDir* PPM_photonsPerIteration);
-			//Colour Le = light->evaluate(-lightDir);
-			//Colour flux = Le / (pmf * pdfPos * pdfDir * PPM_photonsPerIteration);
-			
+
+			Colour Le = light->getTotalPhotonFlux(-lightDir);
+			Colour flux = Le / (pmf * pdfPos * pdfDir * PPM_photonsPerIteration);
+
 
 			for (int depth = 0; depth < PPM_MAX_DEPTH; depth++)
 			{
 				IntersectionData intersection = scene->traverse(photon);
 				ShadingData shadingData = scene->calculateShadingData(intersection, photon);
 				if (shadingData.t >= FLT_MAX) break;
-				//if (shadingData.bsdf->isPureSpecular()) break;
 
-				for (int y = 0; y < film->height; y ++) {
-					for (int x = 0; x < film->width; x ++) {
-						int index = y * film->width + x;
-						for (HitPoint& hp : hitPoints[index]) {
-							float dist2 = (hp.position - photon.at(intersection.t)).lengthSq();
-							if (dist2 < hp.radius2 && hp.normal.dot(shadingData.sNormal)>0.95f) {
-								//*******here need to check pure specular
-								Vec3 wi = -photon.dir;
-								Colour bsdf = shadingData.bsdf->evaluate(shadingData, wi);
-								float cosTheta = fabs(Dot(wi, shadingData.sNormal));
+				if (!shadingData.bsdf->isPureSpecular()) {
+					//std::vector<HitPoint*> resHP;
+					Vec3 wi = -photon.dir;
+					float cosTheta = Dot(wi, shadingData.sNormal);
+					Colour bsdf = shadingData.bsdf->evaluate(shadingData, wi);
+					Colour col = flux * bsdf * cosTheta;
 
-								std::lock_guard<std::mutex> lock(tileQueueMutex);
-								hp.photonCount++;
-								hp.flux = hp.flux + flux * bsdf * cosTheta;
+					kdTree->traverse(kdTree->root, shadingData.x, photon.dir, cacheHP[threadID],col);
 
-							}
-						}
+
+					//Russian Roulette
+					float russianRouletteProbability = max(0.0f, min(flux.Lum(), 0.9f));
+					if (samplers[threadID].next() < russianRouletteProbability)
+					{
+						flux = flux / russianRouletteProbability;
+					}
+					else
+					{
+						break;
 					}
 				}
-				//Russian Roulette
-				float russianRouletteProbability = max(0.0f, min(flux.Lum(), 0.9f));
-				if (samplers[threadID].next() < russianRouletteProbability)
-				{
-					flux = flux / russianRouletteProbability;
-				}
-				else
-				{
-					break;
-				}
 
-
+				//next ray
 				float pdf;
 				Colour bsdf;
-				Vec3 wi = shadingData.bsdf->sample(shadingData, &samplers[threadID], bsdf, pdf);
+				Vec3 newDir = shadingData.bsdf->sample(shadingData, &samplers[threadID], bsdf, pdf);
 				if (pdf < EPSILON) break;
 
-				float cosTheta = Dot(wi, shadingData.sNormal);
-				if (cosTheta < 0.0f) break;
+				float cosTheta = fabs(Dot(newDir, shadingData.sNormal));
+
 				flux = flux * bsdf * cosTheta / pdf;
-				photon.init(shadingData.x + (wi * EPSILON), wi);
+				photon.init(shadingData.x + (newDir * EPSILON), newDir);
 
 			}
 		}
@@ -655,7 +657,7 @@ public:
 		kdTree->buildTree(flatHitPoints);
 	}
 	void PPM_GenerateHP_Multithread(int threadID) {
-		
+
 		while (!stopThreads) {
 			TileInfo* tile;
 			{
@@ -673,12 +675,12 @@ public:
 			for (int y = yStart; y < yEnd; y++) {
 				for (int x = xStart; x < xEnd; x++) {
 					int index = y * film->width + x;
-					for (int i = 0; i < PPM_MAX_RAY;i++) {
+					for (int i = 0; i < PPM_MAX_RAY; i++) {
 						float px = x + samplers[threadID].next();
 						float py = y + samplers[threadID].next();
 						Ray ray = scene->camera.generateRay(px, py);
-						PPM_GenerateHP_Bounce(ray, 0, &samplers[threadID], index, Colour(0,0,0));
-						
+						PPM_GenerateHP_Bounce(ray, 0, &samplers[threadID], index, Colour(1.0f, 1.0f, 1.0f));
+
 					}
 				}
 			}
@@ -686,7 +688,7 @@ public:
 	}
 	//One ray can generate multiple hitpoints by bouncing
 	//Hitpoints can only be placed on the DIFFUSE surface
-	void PPM_GenerateHP_Bounce(Ray&ray,int depth,Sampler *sampler,int index, Colour throughput) {
+	void PPM_GenerateHP_Bounce(Ray& ray, int depth, Sampler* sampler, int index, Colour throughput) {
 
 		IntersectionData intersection = scene->traverse(ray);
 		ShadingData shadingData = scene->calculateShadingData(intersection, ray);
@@ -696,7 +698,7 @@ public:
 			if (shadingData.bsdf->isEmissive()) {
 				//1.1 if the ray is a light
 				if (shadingData.bsdf->isLight()) {
-					DirectLight[index] = DirectLight[index]+ shadingData.bsdf->emit(shadingData, shadingData.wo);
+					DirectLight[index] = DirectLight[index] + shadingData.bsdf->emit(shadingData, shadingData.wo);
 					// discard the ray that hits the light
 					return;
 				}
