@@ -280,7 +280,6 @@ public:
 			Colour emitted;
 
 			//For area light, p is a point on the light. For environment light, p is the direction to the light.
-			//For area light, pdf is based on area. For environment light, pdf is based on solid angle.
 			Vec3 p = light->sample(sampler, emitted, pdf, shadingData.x);
 
 			if (pdf > 1e-12) {
@@ -292,13 +291,13 @@ public:
 					wi = p - shadingData.x;
 					float l = wi.lengthSq();
 					wi = wi.normalize();
-					GTerm = (max(Dot(wi, shadingData.sNormal), 0.0f) * max(Dot(-wi, light->normal(wi)), 0.0f)) / l;
+					GTerm = fabs(Dot(wi, shadingData.sNormal)) * max(Dot(-wi, light->normal(wi)), 0.0f) / l;
 					visible = (GTerm > 0 && scene->visible(shadingData.x + wi * EPSILON, p));
 					pdf_light = pdf * pmf;
 				}
 				else {
 					wi = p;
-					GTerm = max(Dot(wi, shadingData.sNormal), 0.0f);
+					GTerm = fabs(Dot(wi, shadingData.sNormal));
 					visible = (GTerm > 0 && scene->visible(shadingData.x + wi * EPSILON, shadingData.x + (wi * 10000.0f)));
 					pdf_light = pdf * pmf;
 				}
@@ -334,7 +333,7 @@ public:
 							pdf_light = pdf * pmf;
 							W = MISWeight(pdf_bsdf, pdf_light);
 							float l = (shadowShadingData.x - shadingData.x).lengthSq();
-							float GTerm = (max(Dot(wi, shadingData.sNormal), 0.0f) * max(Dot(-wi, hitlight->normal(wi)), 0.0f)) / l;
+							float GTerm = fabs(Dot(wi, shadingData.sNormal)) * max(Dot(-wi, hitlight->normal(wi)), 0.0f) / l;
 							L_bsdf = bsdf * emitted * GTerm * W / pdf_bsdf;
 						}
 					}
@@ -346,7 +345,7 @@ public:
 					pdf = scene->background->PDF(wi, shadingData.x, shadowShadingData.x);
 					pdf_light = pdf * pmf;
 					W = MISWeight(pdf_bsdf, pdf_light);
-					float GTerm = max(Dot(wi, shadingData.sNormal), 0.0f);
+					float GTerm = fabs(Dot(wi, shadingData.sNormal));
 					L_bsdf = bsdf * emitted * GTerm * W / pdf_bsdf;
 
 				}
@@ -369,7 +368,7 @@ public:
 						Light* hitlight = scene->getLightFromTriangleID(shadowIntersection.ID);
 						if (hitlight) {
 							float l2 = (shadowShadingData.x - shadingData.x).lengthSq();
-							float GTerm = (max(Dot(wi, shadingData.sNormal), 0.0f) * max(Dot(-wi, hitlight->normal(wi)), 0.0f)) / l2;
+							float GTerm = fabs(Dot(wi, shadingData.sNormal)) * max(Dot(-wi, hitlight->normal(wi)), 0.0f) / l2;
 							L_bsdf = bsdf * emitted * GTerm / pdf_bsdf;
 						}
 					}
@@ -378,7 +377,7 @@ public:
 				else {
 					// Environment light
 					emitted = scene->background->evaluate(wi);
-					float GTerm = max(Dot(wi, shadingData.sNormal), 0.0f);
+					float GTerm = fabs(Dot(wi, shadingData.sNormal));
 					L_bsdf = bsdf * emitted * GTerm / pdf_bsdf;
 
 				}
@@ -425,8 +424,8 @@ public:
 			float pdf;
 			Vec3 wi = shadingData.bsdf->sample(shadingData, sampler, bsdf, pdf);
 
-			float cosTheta = Dot(wi, shadingData.sNormal);
-			if (pdf > 1e-12f && cosTheta > 0.0f) {
+			float cosTheta = fabs(Dot(wi, shadingData.sNormal));
+			if (pdf > 1e-12f) {
 				pathThroughput = pathThroughput * bsdf * cosTheta / pdf;
 				Ray nextRay;
 				nextRay.init(shadingData.x + (wi * EPSILON), wi);
@@ -514,10 +513,10 @@ public:
 	void renderPPM(bool denoising) {
 		photonCount = 0;
 		generateTiles();
-
+		film->incrementSPP();
 		for (int i = 0; i < numProcs; i++) {
 			threads[i] = new std::thread(&RayTracer::PPM_GeneratePhoton_MultiThread, this, i);
-		}		film->incrementSPP();
+		}
 		for (int i = 0; i < numProcs; i++) {
 			threads[i]->join();
 			delete threads[i];
@@ -552,6 +551,7 @@ public:
 					}
 				}
 				result = (result + DirectLight[index]) / PPM_MAX_RAY;
+				//film->film[index] = film->film[index] * (film->SPP - 1) / film->SPP + result / film->SPP;
 				film->film[index] = result;
 			}
 		}
