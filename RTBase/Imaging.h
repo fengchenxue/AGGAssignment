@@ -12,7 +12,36 @@
 // Stop warnings about buffer overruns if size is zero. Size should never be zero and if it is the code handles it.
 #pragma warning( disable : 6386)
 
-constexpr float texelScale = 1.0f / 255.0f;
+//used for adaptive sampling, this is the minimum number of samples before we start checking for convergence
+#define ADAPTIVE_SAMPLING_MINIMUM_SAMPLES 4
+#define ADAPTIVE_SAMPLING_EPS 0.1f
+
+struct PixelStat {
+	Vec3 mean = Vec3(0.0f, 0.0f, 0.0f);
+	Vec3 meanSquared = Vec3(0.0f, 0.0f, 0.0f);
+	int numSamples = 0;
+	bool converged = false;
+
+	//returns true if converged. 
+	//The return value helps check if a tile is converged.
+	bool addSample(const Vec3& sample) {
+		numSamples++;
+		Vec3 delta = sample - mean;
+		mean = mean + delta / (float)(numSamples);
+		meanSquared = meanSquared + delta * (sample - mean);
+
+		if (numSamples > ADAPTIVE_SAMPLING_MINIMUM_SAMPLES) {
+			Vec3 variance = meanSquared / (float)(numSamples - 1);
+			float invnumSamples = 1.0f / (float)numSamples;
+			//95.4% confidence interval
+			Vec3 error = Vec3(sqrtf(variance.x * invnumSamples), sqrtf(variance.y * invnumSamples), sqrtf(variance.z * invnumSamples)) * 2.0f;
+			//I want the 95% CI to be smaller than 10% of my current average pixel color.
+			Vec3 tolerance = Vec3(abs(mean.x), abs(mean.y), abs(mean.z)) * ADAPTIVE_SAMPLING_EPS;
+			converged = (error.x <= tolerance.x && error.y <= tolerance.y && error.z <= tolerance.z);
+		}
+		return converged;
+	}
+};
 
 class Texture
 {
@@ -216,14 +245,13 @@ class Film
 {
 public:
 	Colour* film;
-	//unsigned char* lastFilmR;
-	//unsigned char* lastFilmG;
-	//unsigned char* lastFilmB;
 	unsigned int width;
 	unsigned int height;
 	int SPP;
-	std::vector<int> vecSPP;
 	ImageFilter* filter;
+
+	//used for adaptive sampling
+	std::vector<PixelStat> pixelStats;
 
 	//denoise
 	//std::vector<float> inputbuffer;
@@ -241,17 +269,46 @@ public:
 		int x_end = std::min(static_cast<int>(width-1),static_cast<int>(floorf(x + r)));
 		int y_start = std::max(0, static_cast<int>(floorf(y - r)));
 		int y_end = std::min(static_cast<int>(height-1), static_cast<int>(floorf(y + r)));
-
-		for (int i = x_start; i <= x_end; i++)
+		for (int j = y_start; j <= y_end; j++)
 		{
-			for (int j = y_start; j <= y_end; j++)
+			for (int i = x_start; i <= x_end; i++)
 			{
+				int index = j * width + i;
+				if (pixelStats[index].converged) continue;
+
 				float dx = i + 0.5f - x;
 				float dy = j + 0.5f - y;
-				float weight = filter->filter(dx,dy);
-				film[j * width + i] = film[j * width + i] + (L * weight);
+				float weight = filter->filter(dx, dy);
+				film[index] = film[index] + (L * weight);
 			}
 		}
+	}
+	//I added this function
+	void denoise() {
+
+		float* input = (float*)inputBuffer.getData();
+		float* output = (float*)outputBuffer.getData();
+		for (int y = 0; y < height; y++)
+		{
+			for (int x = 0; x < width; x++)
+			{
+				int sp = pixelStats[y * width + x].numSamples;
+				int index = (y * width + x) * 3;
+
+				//std::cout << inputBuffer.getData() << std::endl;
+				if (sp > 0) {
+					input[index] = film[y * width + x].r / (float)sp;
+					input[index + 1] = film[y * width + x].g / (float)sp;
+					input[index + 2] = film[y * width + x].b / (float)sp;
+				}
+				else {
+					input[index] = 0.0f;
+					input[index + 1] = 0.0f;
+					input[index + 2] = 0.0f;
+				}
+			}
+		}
+		denoiseFilter.execute();
 	}
 	void tonemap(int x, int y, unsigned char& r, unsigned char& g, unsigned char& b, bool PPM, float exposure = 1.0f)
 	{
@@ -264,7 +321,7 @@ public:
 		}
 		else
 		{
-			color = film[y * width + x] * exposure / (float)vecSPP[y * width + x];
+			color = film[y * width + x] * exposure / (float)pixelStats[y * width + x].numSamples;
 		}
 
 		// ACES Filmic Approximation (Narkowicz 2015)
@@ -303,9 +360,11 @@ public:
 		film = new Colour[width * height];
 		clear();
 		filter = _filter;
-		vecSPP.resize(width * height,0);
 
 		//I need to change code here
+		// adaptive sampling
+		pixelStats.resize(width * height);
+		
 		//denoise
 		device = oidn::newDevice(OIDN_DEVICE_TYPE_CPU);
 		device.commit();
@@ -333,37 +392,9 @@ public:
 		Colour* hdrpixels = new Colour[width * height];
 		for (unsigned int i = 0; i < (width * height); i++)
 		{
-			hdrpixels[i] = film[i] / (float)vecSPP[i];
+			hdrpixels[i] = film[i] / (float)pixelStats[i].numSamples;
 		}
 		stbi_write_hdr(filename.c_str(), width, height, 3, (float*)hdrpixels);
 		delete[] hdrpixels;
-	}
-
-	//I added this function
-	void denoise() {
-		
-		float* input = (float*)inputBuffer.getData();
-		float* output = (float*)outputBuffer.getData();
-		for (int y = 0; y < height; y++)
-		{
-			for (int x = 0; x < width; x++)
-			{
-				int sp = vecSPP[y * width + x];
-				int index = (y * width + x) * 3;
-
-				//std::cout << inputBuffer.getData() << std::endl;
-				if (sp > 0) {
-					input[index] = film[y * width + x].r / (float)sp;
-					input[index + 1] = film[y * width + x].g / (float)sp;
-					input[index + 2] = film[y * width + x].b / (float)sp;
-				}
-				else {
-					input[index] = 0.0f;
-					input[index + 1] = 0.0f;
-					input[index + 2] = 0.0f;
-				}
-			}
-		}
-		denoiseFilter.execute();
 	}
 };

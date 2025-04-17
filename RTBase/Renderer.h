@@ -17,11 +17,6 @@
 #define MAX_DEPTH 5
 #define TILE_SIZE 16
 
-//this value is used to for adaptive sampling,
-//if the spp of a tile is more than this value, it will be considered whether converged
-#define MIN_TILE_SPP 8
-#define ADAPTIVE_SAMPLING_THRESHOLD 0.00001f
-
 //these values are used for PPM
 #define PPM_MAX_RAY 4
 // PPM_MAX_BOUNCE=3 means a ray from the carmera can bounce 3 times
@@ -39,13 +34,10 @@ inline float MISWeight(float pdf1, float pdf2)
 }
 struct TileInfo
 {
+	//x and y are coordinates
 	int x, y;
-	//the following values are used for adaptive sampling
-	int SPP = 0;
-	Vec3 mean = Vec3(0.0f, 0.0f, 0.0f);
-	Vec3 meanSquared = Vec3(0.0f, 0.0f, 0.0f);
 	int convergedCount = 0;
-	bool stop = false;
+	bool converged = false;
 };
 //used for PPM to generate hitpoints from screen
 struct HitPoint{
@@ -156,15 +148,17 @@ public:
 	std::unique_ptr<KDTree> kdTree = std::make_unique<KDTree>();
 	std::atomic<int> photonCount = 0;
 	Colour* DirectLight;
-	//store results of PPM photon pass, then it will be calculated in the main thread
+	//A temporary array that stores results of PPM photon pass, 
+	//then it will be calculated in the main thread
 	std::vector<std::pair<HitPoint*, Colour>> cacheHP[64];
+	std::vector<std::atomic<bool>> HPstatus;
 
 	void init(Scene* _scene, GamesEngineeringBase::Window* _canvas)
 	{
 		scene = _scene;
 		canvas = _canvas;
 		film = new Film();
-		film->init((unsigned int)scene->camera.width, (unsigned int)scene->camera.height, new MitchellFilter());
+		film->init((unsigned int)scene->camera.width, (unsigned int)scene->camera.height, new GaussianFilter());
 		SYSTEM_INFO sysInfo;
 		GetSystemInfo(&sysInfo);
 		numProcs = sysInfo.dwNumberOfProcessors;
@@ -192,7 +186,7 @@ public:
 			tileQueue.pop();
 		}
 		for (auto& tile : tiles) {
-			if (tile.stop) continue;
+			if (tile.converged) continue;
 			TileInfo* newTile = &tile;
 			tileQueue.push(newTile);
 
@@ -210,54 +204,25 @@ public:
 			int startX = tile->x;
 			int startY = tile->y;
 
-			Vec3 tileSum = Vec3(0.0f, 0.0f, 0.0f);
-			Vec3 tileSumSquared = Vec3(0.0f, 0.0f, 0.0f);
-			int sampleCount = 0;
-
 			for (int y = startY; y < startY + TILE_SIZE && y < film->height; y++) {
 				for (int x = startX; x < startX + TILE_SIZE && x < film->width; x++) {
+					int index = y * film->width + x;
+					if (film->pixelStats[index].converged) continue;
+					
 					float px = x + samplers[threadID].next();
 					float py = y + samplers[threadID].next();
-
+					
 					Ray ray = scene->camera.generateRay(px, py);
-
 					Colour pathThroughput = Colour(1.0f, 1.0f, 1.0f);
 					Colour col = pathTraceMIS(ray, pathThroughput, 0, &samplers[threadID]);
-					//Colour col =pathTrace(ray, pathThroughput, 0, &samplers[threadID]);
-					film->vecSPP[y * film->width + x]++;
+					
 					film->splat(px, py, col);
-
-					//adaptive sampling
-					Vec3 pixel(col.r, col.g, col.b);
-					tileSum = tileSum + pixel;
-					tileSumSquared = tileSumSquared + pixel * pixel;
-					sampleCount++;
-
+					if (film->pixelStats[index].addSample(Vec3(col.r, col.g, col.b))) {
+						tile->convergedCount++;
+						tile->converged = (tile->convergedCount >= TILE_SIZE*TILE_SIZE);
+					}
 				}
 			}
-			//save adaptive sampling information
-			tile->SPP += 1;
-			tile->mean = tile->mean + tileSum / sampleCount;
-			tile->meanSquared = tile->meanSquared + tileSumSquared / sampleCount;
-
-			//converge check
-			if (tile->SPP >= MIN_TILE_SPP) {
-				Vec3 mean = tile->mean / tile->SPP;
-				Vec3 meanSquared = tile->meanSquared / tile->SPP;
-				Vec3 variance = meanSquared - mean * mean;
-				float maxvariance = max(variance.x, max(variance.y, variance.z));
-
-				if (maxvariance < ADAPTIVE_SAMPLING_THRESHOLD) {
-					tile->convergedCount++;
-				}
-				else {
-					tile->convergedCount = 0;
-				}
-				if (tile->convergedCount >= 3) {
-					tile->stop = true;
-				}
-			}
-
 		}
 	}
 	Colour computeDirectMIS(ShadingData shadingData, Sampler* sampler)

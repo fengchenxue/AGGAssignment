@@ -12,10 +12,10 @@ int main(int argc, char *argv[])
 
 	// Initialize default parameters
 	std::string sceneName = "Scene/";
-	//sceneName+= "cornell-box";
+	sceneName+= "cornell-box";
 	//sceneName+= "MaterialsScene";
 	//sceneName+= "bathroom";
-	sceneName += "glass-of-water";
+	//sceneName += "glass-of-water";
 	//sceneName += "kitchen";
 	std::string filename = "GI.hdr";
 	unsigned int SPP = 8192;
