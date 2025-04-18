@@ -16,6 +16,7 @@
 
 #define MAX_DEPTH 5
 #define TILE_SIZE 16
+#define MIN_PDF 0.0001f
 
 //these values are used for PPM
 #define PPM_MAX_RAY 4
@@ -254,21 +255,23 @@ public:
 
 				if (light->isArea()) {
 					wi = p - shadingData.x;
-					float l = wi.lengthSq();
+					//float l = wi.lengthSq();
 					wi = wi.normalize();
-					GTerm = fabs(Dot(wi, shadingData.sNormal)) * max(Dot(-wi, light->normal(wi)), 0.0f) / l;
-					visible = (GTerm > 0 && scene->visible(shadingData.x + wi * EPSILON, p));
+					GTerm = fabs(Dot(wi, shadingData.sNormal));
+					visible = (scene->visible(shadingData.x + wi * EPSILON, p));
 					pdf_light = pdf * pmf;
 				}
 				else {
 					wi = p;
 					GTerm = fabs(Dot(wi, shadingData.sNormal));
-					visible = (GTerm > 0 && scene->visible(shadingData.x + wi * EPSILON, shadingData.x + (wi * 10000.0f)));
+					visible = (scene->visible(shadingData.x + wi * EPSILON, shadingData.x + (wi * 10000.0f)));
 					pdf_light = pdf * pmf;
 				}
-
+				
 				if (visible) {
 					pdf_bsdf = shadingData.bsdf->PDF(shadingData, wi);
+					pdf_light = max(pdf_light, MIN_PDF);
+					pdf_bsdf = max(pdf_bsdf, MIN_PDF);
 					float W = MISWeight(pdf_light, pdf_bsdf);
 					L_light = shadingData.bsdf->evaluate(shadingData, wi) * emitted * GTerm * W / pdf_light;
 				}
@@ -296,9 +299,11 @@ public:
 						if (hitlight) {
 							pdf = hitlight->PDF(wi, shadingData.x, shadowShadingData.x);
 							pdf_light = pdf * pmf;
+							pdf_light = max(pdf_light, MIN_PDF);
+							pdf_bsdf = max(pdf_bsdf, MIN_PDF);
 							W = MISWeight(pdf_bsdf, pdf_light);
-							float l = (shadowShadingData.x - shadingData.x).lengthSq();
-							float GTerm = fabs(Dot(wi, shadingData.sNormal)) * max(Dot(-wi, hitlight->normal(wi)), 0.0f) / l;
+							//float l = (shadowShadingData.x - shadingData.x).lengthSq();
+							float GTerm = fabs(Dot(wi, shadingData.sNormal));
 							L_bsdf = bsdf * emitted * GTerm * W / pdf_bsdf;
 						}
 					}
@@ -309,6 +314,8 @@ public:
 					emitted = scene->background->evaluate(wi);
 					pdf = scene->background->PDF(wi, shadingData.x, shadowShadingData.x);
 					pdf_light = pdf * pmf;
+					pdf_light = max(pdf_light, MIN_PDF);
+					pdf_bsdf = max(pdf_bsdf, MIN_PDF);
 					W = MISWeight(pdf_bsdf, pdf_light);
 					float GTerm = fabs(Dot(wi, shadingData.sNormal));
 					L_bsdf = bsdf * emitted * GTerm * W / pdf_bsdf;
@@ -332,8 +339,9 @@ public:
 						emitted = shadowShadingData.bsdf->emit(shadowShadingData, -wi);
 						Light* hitlight = scene->getLightFromTriangleID(shadowIntersection.ID);
 						if (hitlight) {
-							float l2 = (shadowShadingData.x - shadingData.x).lengthSq();
-							float GTerm = fabs(Dot(wi, shadingData.sNormal)) * max(Dot(-wi, hitlight->normal(wi)), 0.0f) / l2;
+							//float l2 = (shadowShadingData.x - shadingData.x).lengthSq();
+							float GTerm = fabs(Dot(wi, shadingData.sNormal));
+							pdf_bsdf = max(pdf_bsdf, MIN_PDF);
 							L_bsdf = bsdf * emitted * GTerm / pdf_bsdf;
 						}
 					}
@@ -343,6 +351,7 @@ public:
 					// Environment light
 					emitted = scene->background->evaluate(wi);
 					float GTerm = fabs(Dot(wi, shadingData.sNormal));
+					pdf_bsdf = max(pdf_bsdf, MIN_PDF);
 					L_bsdf = bsdf * emitted * GTerm / pdf_bsdf;
 
 				}
@@ -390,7 +399,7 @@ public:
 			Vec3 wi = shadingData.bsdf->sample(shadingData, sampler, bsdf, pdf);
 
 			float cosTheta = fabs(Dot(wi, shadingData.sNormal));
-			if (pdf > 1e-12f) {
+			if (pdf > MIN_PDF) {
 				pathThroughput = pathThroughput * bsdf * cosTheta / pdf;
 				Ray nextRay;
 				nextRay.init(shadingData.x + (wi * EPSILON), wi);
@@ -450,13 +459,13 @@ public:
 			threads[i]->join();
 			delete threads[i];
 		}
-		if (denoising) film->denoise();
+		if (denoising) film->denoise(false);
 		for (int y = 0; y < film->height; y++) {
 			for (int x = 0; x < film->width; x++) {
 				unsigned char r;
 				unsigned char g;
 				unsigned char b;
-				film->tonemap(x, y, r, g, b, false);
+				film->tonemap(x, y, r, g, b, false,denoising);
 				canvas->draw(x, y, r, g, b);
 			}
 		}
@@ -521,13 +530,13 @@ public:
 			}
 		}
 
-		if (denoising) film->denoise();
+		if (denoising) film->denoise(true);
 		for (int y = 0; y < film->height; y++) {
 			for (int x = 0; x < film->width; x++) {
 				unsigned char r;
 				unsigned char g;
 				unsigned char b;
-				film->tonemap(x, y, r, g, b, true);
+				film->tonemap(x, y, r, g, b, true,denoising);
 				canvas->draw(x, y, r, g, b);
 			}
 		}

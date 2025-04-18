@@ -8,7 +8,7 @@
 int main(int argc, char *argv[])
 {
 	bool PPMMode = false;
-	bool denoising = false;
+	bool denoising = true;
 
 	// Initialize default parameters
 	std::string sceneName = "Scene/";

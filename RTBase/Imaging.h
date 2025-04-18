@@ -1,5 +1,6 @@
 #pragma once
 #include"oidn.hpp"
+#pragma comment(lib, "OpenImageDenoise_core.lib")
 #pragma comment(lib, "OpenImageDenoise.lib")
 
 #include "Core.h"
@@ -13,26 +14,27 @@
 #pragma warning( disable : 6386)
 
 //used for adaptive sampling, this is the minimum number of samples before we start checking for convergence
-#define ADAPTIVE_SAMPLING_MINIMUM_SAMPLES 4
-#define ADAPTIVE_SAMPLING_EPS 0.1f
+#define ADAPTIVE_SAMPLING_MINIMUM_SAMPLES 8.0f
+#define ADAPTIVE_SAMPLING_EPS 0.05f
 
 struct PixelStat {
 	Vec3 mean = Vec3(0.0f, 0.0f, 0.0f);
 	Vec3 meanSquared = Vec3(0.0f, 0.0f, 0.0f);
-	int numSamples = 0;
+	//int numSamples = 0;
+	float weight = 0.0f;
 	bool converged = false;
 
 	//returns true if converged. 
 	//The return value helps check if a tile is converged.
 	bool addSample(const Vec3& sample) {
-		numSamples++;
+		//numSamples++;
 		Vec3 delta = sample - mean;
-		mean = mean + delta / (float)(numSamples);
+		mean = mean + delta / weight;
 		meanSquared = meanSquared + delta * (sample - mean);
 
-		if (numSamples > ADAPTIVE_SAMPLING_MINIMUM_SAMPLES) {
-			Vec3 variance = meanSquared / (float)(numSamples - 1);
-			float invnumSamples = 1.0f / (float)numSamples;
+		if (weight > ADAPTIVE_SAMPLING_MINIMUM_SAMPLES) {
+			Vec3 variance = meanSquared / (weight - 1.0f);
+			float invnumSamples = 1.0f / weight;
 			//95.4% confidence interval
 			Vec3 error = Vec3(sqrtf(variance.x * invnumSamples), sqrtf(variance.y * invnumSamples), sqrtf(variance.z * invnumSamples)) * 2.0f;
 			//I want the 95% CI to be smaller than 10% of my current average pixel color.
@@ -254,8 +256,9 @@ public:
 	std::vector<PixelStat> pixelStats;
 
 	//denoise
-	//std::vector<float> inputbuffer;
+	//std::vector<float> inputBuffer;
 	//std::vector<float> outputBuffer;
+
 	oidn::DeviceRef device;
 	oidn::FilterRef denoiseFilter;
 	oidn::BufferRef	inputBuffer;
@@ -280,11 +283,12 @@ public:
 				float dy = j + 0.5f - y;
 				float weight = filter->filter(dx, dy);
 				film[index] = film[index] + (L * weight);
+				pixelStats[index].weight += weight;
 			}
 		}
 	}
 	//I added this function
-	void denoise() {
+	void denoise(bool PPM) {
 
 		float* input = (float*)inputBuffer.getData();
 		float* output = (float*)outputBuffer.getData();
@@ -292,36 +296,48 @@ public:
 		{
 			for (int x = 0; x < width; x++)
 			{
-				int sp = pixelStats[y * width + x].numSamples;
+				float sp = PPM ? 1.0f : pixelStats[y * width + x].weight;
 				int index = (y * width + x) * 3;
 
-				//std::cout << inputBuffer.getData() << std::endl;
 				if (sp > 0) {
-					input[index] = film[y * width + x].r / (float)sp;
-					input[index + 1] = film[y * width + x].g / (float)sp;
-					input[index + 2] = film[y * width + x].b / (float)sp;
+					input[index] = film[y * width + x].r / sp;
+					input[index + 1] = film[y * width + x].g / sp;
+					input[index + 2] = film[y * width + x].b / sp;
+					/*inputBuffer[index] = film[y * width + x].r / sp;
+					inputBuffer[index + 1] = film[y * width + x].g / sp;
+					inputBuffer[index + 2] = film[y * width + x].b / sp;*/
 				}
 				else {
 					input[index] = 0.0f;
 					input[index + 1] = 0.0f;
 					input[index + 2] = 0.0f;
+					/*inputBuffer[index] = 0.0f;
+					inputBuffer[index + 1] = 0.0f;
+					inputBuffer[index + 2] = 0.0f;*/
 				}
 			}
 		}
 		denoiseFilter.execute();
 	}
-	void tonemap(int x, int y, unsigned char& r, unsigned char& g, unsigned char& b, bool PPM, float exposure = 1.0f)
+	void tonemap(int x, int y, unsigned char& r, unsigned char& g, unsigned char& b, bool PPM, bool denoising, float exposure = 1.0f)
 	{
 		// Return a tonemapped pixel at coordinates x, y
 		
 		Colour color;
-		if (PPM)
-		{
-			color = film[y * width + x] * exposure;
+		if (!denoising) {
+			color = (PPM) ? (film[y * width + x] * exposure) : (film[y * width + x] * exposure / pixelStats[y * width + x].weight);
 		}
-		else
-		{
-			color = film[y * width + x] * exposure / (float)pixelStats[y * width + x].numSamples;
+		else {
+			float* output = (float*)outputBuffer.getData();
+			int index = (y * width + x) * 3;
+			color.r = output[index];
+			color.g = output[index + 1];
+			color.b = output[index + 2];
+			
+			/*int index = (y * width + x) * 3;
+			color.r = outputBuffer[index];
+			color.g = outputBuffer[index + 1];
+			color.b = outputBuffer[index + 2];*/
 		}
 
 		// ACES Filmic Approximation (Narkowicz 2015)
@@ -372,6 +388,9 @@ public:
 		inputBuffer = device.newBuffer(width * height * 3 * sizeof(float));
 		outputBuffer = device.newBuffer(width * height * 3 * sizeof(float));
 
+		//inputBuffer.resize(width * height * 3);
+		//outputBuffer.resize(width * height * 3);
+
 		denoiseFilter = device.newFilter("RT");
 		denoiseFilter.set("hdr", true);
 		denoiseFilter.setImage("color", inputBuffer, oidn::Format::Float3, width, height);
@@ -382,6 +401,14 @@ public:
 	{
 		memset(film, 0, width * height * sizeof(Colour));
 		SPP = 0;
+		for (auto &p: pixelStats)
+		{
+			p.mean = Vec3(0.0f, 0.0f, 0.0f);
+			p.meanSquared = Vec3(0.0f, 0.0f, 0.0f);
+			p.weight = 0.0f;
+			p.converged = false;
+		}
+
 	}
 	void incrementSPP()
 	{
@@ -392,7 +419,7 @@ public:
 		Colour* hdrpixels = new Colour[width * height];
 		for (unsigned int i = 0; i < (width * height); i++)
 		{
-			hdrpixels[i] = film[i] / (float)pixelStats[i].numSamples;
+			hdrpixels[i] = film[i] / pixelStats[i].weight;
 		}
 		stbi_write_hdr(filename.c_str(), width, height, 3, (float*)hdrpixels);
 		delete[] hdrpixels;
