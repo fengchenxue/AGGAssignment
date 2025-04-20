@@ -1,25 +1,49 @@
-# RTBase
+# Assignment instructions
 
-## Overview
+## 1.Overview
+This project implements 2 ways of ray tracing. One is MIS, the other is progressive photon mapping (PPM).
 
-This project provides a foundational ray tracing renderer for students studying Advanced Computer Graphics. The codebase is structured to facilitate learning by including sections where students need to complete missing implementations.
-
-## Project Structure
-
+Here are two setting options here. 
 ```
-Renderer/
-│── Core.h               # Core mathematical and utility functions
-│── Renderer.h           # Main ray tracing logic
-│── Sampling.h           # Monte Carlo sampling utilities
-│── Scene.h              # Scene representation and camera logic
-│── SceneLoader.h        # Loads scenes and configurations
-│── Lights.h             # Light source definitions
-│── Geometry.h           # Geometric structures and operations
-│── Imaging.h            # Image generation and storage
-│── Materials.h          # Materials and shading models
-│── GEMLoader.h          # External loader for scene assets
-│── GamesEngineeringBase.h  # Base utilities for integration
+bool PPMMode = false; 
+bool denoising = false;
 ```
+For "PPMMode=false", you can see MIS renderer. For "PPMMode=true", you can see PPM renderer.
+
+"denoising" option is used to enable OIDN-based denoiser.
+
+
+## 2.Material
+I implemented the following materials:
+```
+1. Diffuse 
+#Line 154-195, class DiffuseBSDF, Materials.h
+2. Mirror
+#Line 197-251, class MirrorBSDF, Materials.h
+3. Conductor
+#Line 254-352, class ConductorBSDF, Materials.h
+4. Glass
+#Line 354-524, class GlassBSDF, Materials.h
+5. Oren-Nayar
+#Line 626-704, class OrenNayarBSDF, Materials.h
+6. Plastic
+#Line 706-823, class PlasticBSDF, Materials.h
+
+Helper Function
+#Line 15-23, Line 48-119, Materials.h
+
+I didn't implement Dielectric and Layered materials.
+```
+![Diffuse Material without denoiser](/pic/Diffuse_NoDenoiser.png "Magic Gardens")
+
+
+
+
+
+
+
+
+
 
 ## Scenes
 
