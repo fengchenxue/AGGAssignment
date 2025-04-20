@@ -8,12 +8,12 @@
 int main(int argc, char *argv[])
 {
 	bool PPMMode = false;
-	bool denoising = true;
+	bool denoising = false;
 
 	// Initialize default parameters
 	std::string sceneName = "Scene/";
-	sceneName+= "cornell-box";
-	//sceneName+= "MaterialsScene";
+	//sceneName+= "cornell-box";
+	sceneName+= "MaterialsScene";
 	//sceneName+= "bathroom";
 	//sceneName += "glass-of-water";
 	//sceneName += "kitchen";
