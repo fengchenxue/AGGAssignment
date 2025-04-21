@@ -70,11 +70,13 @@ Here is a sample about the bvh of Cornell-box.
 
 ```
 #Line 36-42, struct TileInfo, Renderer.h
-This is the struct of a tile. "TileInfo" stores x and y as the position of screen and adaptive sampling information.
+This is the struct of a tile. 
+"TileInfo" stores x and y as the position of screen and adaptive sampling information.
 
 #Line 146 and 171-178, class RayTracer, Renderer.h
 std::vector<TileInfo> tiles;
-"tiles" stores the tiles of the screen. In line 178-178, it is initialized only once to store all the tiles of the screen.
+"tiles" stores the tiles of the screen. 
+In line 178-178, it is initialized only once to store all the tiles of the screen.
 
 #Line 144, 185-195 and 454, class RayTracer, Renderer.h
 std::queue<TileInfo*> tileQueue;
@@ -82,24 +84,33 @@ std::queue<TileInfo*> tileQueue;
 It is re-filled each frame in "generateTiles()" function during rendering.
 
 #Line 196-228 and 456, class RayTracer, Renderer.h
-"renderTile()" is executed by multiple threads. In this function, a thread calculates the color of pixels of a tile for ray tracing, and then stores the result in "film". The following process like denoising is handled by main thread. 
+"renderTile()" is executed by multiple threads. 
+In this function, a thread calculates the color of pixels of a tile for ray tracing, 
+and then stores the result in "film". 
+The following process like denoising is handled by main thread. 
 ```
 3. A tile based adaptive sampler
    
-At first, I implemented adaptive sampler based on tiles, according to the variance of the whole tile. But I found it inaccurate because some pixels haven't converged while their tiles have converged. 
-
-So, I implemented a adaptive sampler based on pixels. Only all of pixels have converged, then their tile can be converged.
+At first, I implemented adaptive sampler based on tiles, 
+according to the variance of the whole tile. 
+But I found it inaccurate because some pixels haven't converged while their tiles have converged. 
+So, I implemented a adaptive sampler based on pixels. 
+Only all of pixels have converged, then their tile can be converged.
 
 ```
 #Line 20-46, struct PixelStat, Imaging.h
-"PixelStat" stores information about if a pixel is converged. Because when splatting, pixels can get additional color contribution without more sampling count, I changed "int numSamples" to "float weight". "weight" stores the accumulated weight of splatting. 
+"PixelStat" stores information about if a pixel is converged. 
+Because when splatting, pixels can get additional color contribution without more sampling count, 
+I changed "int numSamples" to "float weight". "weight" stores the accumulated weight of splatting. 
 
 #Line 256, class Film, Imaging.h
 std::vector<PixelStat> pixelStats;
 This is where "PixelStat" is stored.
 
 #Line 220-224, class RayTracer, Renderer.h
-In the process of ray tracing, store the colors of pixels in "PixelStat" and check if a pixel is converged. If all pixels of a tile is converged, this tile will be marked as converged. A converged tile won't be pushed into multithreading task queue.
+In the process of ray tracing, store the colors of pixels in "PixelStat" and check if a pixel is converged. 
+If all pixels of a tile is converged, this tile will be marked as converged. 
+A converged tile won't be pushed into multithreading task queue.
 ```
 4. Denoiser
    
@@ -148,9 +159,15 @@ All the pictures above is rendered by MIS.
 
 ```
 #Line 487-710, class RayTracer, Renderer.h
-"PPM_init()", "PPM_GenerateHP_Multithread()" and "PPM_GenerateHP_Bounce()" are to generate hit points from the screen. For my settings, each pixel on the screen generate 4 rays. If the ray hits mesh in the scene, a hit point will be added to "std::vector<std::vector<HitPoint>> hitPoints".
+"PPM_init()", "PPM_GenerateHP_Multithread()" and "PPM_GenerateHP_Bounce()" are to generate hit points from the screen. 
+For my settings, each pixel on the screen generate 4 rays. 
+If the ray hits mesh in the scene, a hit point will be added to "std::vector<std::vector<HitPoint>> hitPoints".
 
-"renderPPM()" is the main PPM rendering function. It is excuted every frame. It uses multithreading to speed up. Multiple threads execute "PPM_GeneratePhoton_MultiThread()" to genetate photons and store hit results if any photon hits a hit point. Then "renderPPM()" calculates the hit results and the final colors of pixels. 
+"renderPPM()" is the main PPM rendering function. 
+It is excuted every frame. It uses multithreading to speed up. 
+Multiple threads execute "PPM_GeneratePhoton_MultiThread()" 
+to genetate photons and store hit results if any photon hits a hit point. 
+Then "renderPPM()" calculates the hit results and the final colors of pixels. 
 ```
 Here is the rendering result of PPM. 
 ![](./pic/PPM.png "PPM")
